@@ -11,7 +11,11 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "supabase:start": "docker-compose up -d",
+    "supabase:stop": "docker-compose down",
+    "supabase:reset": "docker-compose down -v && docker-compose up -d",
+    "dev:local": "cp .env.local .env && npm run dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
@@ -21,8 +25,8 @@
     "@tanstack/react-table": "^8.12.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
-    "flowbite": "^2.3.0",
-    "flowbite-react": "^0.7.2",
+    "flowbite": "^2.5.2",
+    "flowbite-react": "^0.7.8",
     "immer": "^10.0.3",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

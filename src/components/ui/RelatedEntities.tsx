@@ -7,7 +7,17 @@ import { UserSkillForm } from '../forms/UserSkillForm';
 import { CustomerSkillForm } from '../forms/CustomerSkillForm';
 import { useRelationships } from '../../hooks/useRelationships';
 import type { LucideIcon } from 'lucide-react';
-import type { RelatedEntity, RelationshipType } from '../../types';
+
+export type RelationshipType = 'user-customer' | 'user-skill' | 'customer-skill';
+
+export interface RelatedEntity {
+  id: string | number;
+  name: string;
+  subtitle?: string;
+  link: string;
+  relationshipId?: string | number;
+  relationshipData?: any;
+}
 
 interface RelatedEntitiesProps {
   title: string;
@@ -19,6 +29,7 @@ interface RelatedEntitiesProps {
   customerId?: number;
   skillId?: number;
   onUpdate?: () => void;
+  'data-related-type'?: string;
 }
 
 export function RelatedEntities({ 
@@ -30,7 +41,8 @@ export function RelatedEntities({
   userId,
   customerId,
   skillId,
-  onUpdate
+  onUpdate,
+  'data-related-type': dataRelatedType
 }: RelatedEntitiesProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editData, setEditData] = useState<any>(null);
@@ -57,6 +69,10 @@ export function RelatedEntities({
       setIsFormOpen(false);
       setEditData(null);
     }
+  };
+
+  const handleDeleteEntity = (id: string | number, name: string) => {
+    handleDelete(typeof id === 'string' ? parseInt(id, 10) : id);
   };
 
   const getForm = () => {
@@ -98,14 +114,18 @@ export function RelatedEntities({
   }
 
   return (
-    <Card>
+    <Card data-related-type={dataRelatedType || type}>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Icon className="w-5 h-5" />
           {title}
         </h2>
         {type && (
-          <Button size="sm" onClick={() => setIsFormOpen(true)}>
+          <Button 
+            size="sm" 
+            onClick={() => setIsFormOpen(true)}
+            data-action="add-related"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add {title.slice(0, -1)}
           </Button>
@@ -142,7 +162,7 @@ export function RelatedEntities({
                   <Button
                     size="sm"
                     color="failure"
-                    onClick={() => handleDelete(entity.relationshipId!, entity.name)}
+                    onClick={() => handleDeleteEntity(entity.relationshipId!, entity.name)}
                     disabled={relationshipLoading}
                   >
                     <Trash2 className="h-4 w-4" />

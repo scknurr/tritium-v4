@@ -99,7 +99,7 @@ export function Skills() {
     if (skillData.id) {
       await updateSkill({ id: skillData.id, data: skillData });
     } else {
-      await createSkill(skillData);
+      await createSkill({ data: { ...skillData } });
     }
   };
 

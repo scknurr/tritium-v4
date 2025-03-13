@@ -129,7 +129,7 @@ export function Customers() {
     if (customerData.id) {
       await updateCustomer({ id: customerData.id, data: customerData });
     } else {
-      await createCustomer({ ...customerData, status: customerData.status || 'active' });
+      await createCustomer({ data: { ...customerData, status: customerData.status || 'active' } });
     }
   };
 

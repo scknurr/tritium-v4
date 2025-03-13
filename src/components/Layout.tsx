@@ -1,16 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar, Button } from 'flowbite-react';
-import { Users, Building, GraduationCap, Home, LogOut, Settings } from 'lucide-react';
+import { Users, Building, GraduationCap, Home, LogOut, Settings, Terminal } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DarkModeToggle } from './DarkModeToggle';
 import { Breadcrumbs } from './ui/Breadcrumbs';
+import { ConsoleViewer } from './debug/ConsoleViewer';
 
 export function Layout() {
   const navigate = useNavigate();
+  const [showConsole, setShowConsole] = useState(false);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const toggleConsole = () => {
+    setShowConsole(!showConsole);
   };
 
   return (
@@ -39,6 +45,9 @@ export function Layout() {
             <Sidebar.Item icon={Settings} onClick={() => navigate('/settings')} className="cursor-pointer">
               Settings
             </Sidebar.Item>
+            <Sidebar.Item icon={Terminal} onClick={toggleConsole} className="cursor-pointer text-blue-500">
+              Console Logs
+            </Sidebar.Item>
             <Sidebar.Item icon={LogOut} onClick={handleSignOut} className="cursor-pointer text-red-500">
               Sign Out
             </Sidebar.Item>
@@ -49,6 +58,9 @@ export function Layout() {
         <Breadcrumbs />
         <Outlet />
       </div>
+      
+      {/* Console Viewer */}
+      <ConsoleViewer isOpen={showConsole} onClose={() => setShowConsole(false)} />
     </div>
   );
 }

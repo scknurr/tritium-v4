@@ -1,7 +1,12 @@
 import React from 'react';
 import { Modal, Button, Label, TextInput, Select, Textarea } from 'flowbite-react';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
-import type { Customer, Industry } from '../../types';
+import type { Customer } from '../../types';
+
+interface Industry {
+  id: number;
+  name: string;
+}
 
 interface CustomerFormProps {
   customer: Partial<Customer>;
@@ -35,7 +40,16 @@ export function CustomerForm({ customer, isOpen, onClose, onSubmit }: CustomerFo
         throw new Error('Name is required');
       }
 
-      await onSubmit(formData);
+      // Only include fields that are in the customers table
+      const dataToSubmit = {
+        name: formData.name,
+        description: formData.description,
+        website: formData.website,
+        status: formData.status,
+        industry_id: formData.industry_id
+      };
+
+      await onSubmit(dataToSubmit);
       onClose();
     } catch (error) {
       console.error('Error saving customer:', error);
@@ -95,7 +109,7 @@ export function CustomerForm({ customer, isOpen, onClose, onSubmit }: CustomerFo
                 disabled={loadingIndustries}
               >
                 <option value="">Select an industry</option>
-                {industries.map((industry) => (
+                {industries.map((industry: Industry) => (
                   <option key={industry.id} value={industry.id}>
                     {industry.name}
                   </option>

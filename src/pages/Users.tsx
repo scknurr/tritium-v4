@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Users as UsersIcon, Pencil } from 'lucide-react';
 import { Button } from 'flowbite-react';
@@ -14,7 +14,7 @@ import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { USER_FILTERS } from '../lib/filters';
 import { queryKeys } from '../lib/queryKeys';
-import type { Profile } from '../types';
+import type { Profile } from '../lib/supabase';
 
 const columnHelper = createColumnHelper<Profile>();
 
@@ -61,6 +61,14 @@ export function Users() {
     }
   );
 
+  useEffect(() => {
+    console.log('Query Key:', queryKey);
+    console.log('Filter:', filter);
+    console.log('Data:', data);
+    console.log('Loading:', loading);
+    console.log('Error:', error);
+  }, [queryKey, filter, data, loading, error]);
+
   useRealtimeSubscription({
     table: 'profiles',
     onUpdate: refetch
@@ -87,7 +95,7 @@ export function Users() {
     if (userData.id) {
       await updateUser({ id: userData.id, data: userData });
     } else {
-      await createUser(userData);
+      await createUser({ data: userData });
     }
   };
 

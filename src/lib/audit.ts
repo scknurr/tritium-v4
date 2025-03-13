@@ -1,6 +1,67 @@
 import { supabase } from './supabase';
 import { EVENT_TYPES } from './constants';
 
+/**
+ * AUDIT LOG BEST PRACTICES
+ * 
+ * This module handles audit logging throughout the application.
+ * Follow these guidelines to ensure consistent audit log entries that display correctly in the Timeline.
+ * 
+ * METADATA FORMAT:
+ * 
+ * When creating audit logs for entity manipulation events, include the following metadata:
+ * 
+ * 1. For entity creation/updates/deletions:
+ *    - entity_name: The human-readable name of the entity
+ *    - Any relevant IDs that might be needed for links (e.g., skill_id, customer_id)
+ * 
+ * 2. For relationships between entities (e.g., applying a skill at a customer):
+ *    - primary_entity_name: Name of the primary entity (e.g., skill_name)
+ *    - primary_entity_id: ID of the primary entity (e.g., skill_id)
+ *    - related_entity_name: Name of the related entity (e.g., customer_name)
+ *    - related_entity_id: ID of the related entity (e.g., customer_id)
+ *    - additional details: Any relevant details (e.g., proficiency, role, etc.)
+ * 
+ * 3. Specific entity type patterns:
+ * 
+ *    a. Skill Applications:
+ *       metadata: {
+ *         skill_name: "JavaScript",
+ *         skill_id: 123,
+ *         customer_name: "Acme Inc",
+ *         customer_id: 456,
+ *         proficiency: "INTERMEDIATE",
+ *         profile_id: "user-uuid" // if applicable
+ *       }
+ * 
+ *    b. Customer Assignments:
+ *       metadata: {
+ *         customer_name: "Acme Inc",
+ *         customer_id: 456,
+ *         role: "Developer",
+ *         role_id: 789
+ *       }
+ * 
+ *    c. Skill Additions:
+ *       metadata: {
+ *         skill_name: "JavaScript",
+ *         skill_id: 123,
+ *         proficiency_level: "INTERMEDIATE"
+ *       }
+ * 
+ * DESCRIPTION FORMAT:
+ * 
+ * Use a consistent format for the description field:
+ * "[Actor] [action verb] [primary entity] at/to/from [related entity] [additional details]"
+ * 
+ * Examples:
+ * - "John Smith applied JavaScript at Acme Inc"
+ * - "Jane Doe added React to their skills at Advanced level"
+ * - "John Smith assigned to Acme Inc as Developer"
+ * 
+ * The Timeline component will parse this format to create appropriate links and displays.
+ */
+
 interface AuditLogParams {
   eventType: keyof typeof EVENT_TYPES;
   description: string;

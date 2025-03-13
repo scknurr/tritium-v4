@@ -15,9 +15,11 @@ interface DataTableProps<T> {
   data: T[];
   columns: ColumnDef<T, any>[];
   loading?: boolean;
-  error?: string;
+  error?: string | null;
   entityType: string;
-  meta?: Record<string, any>;
+  meta?: {
+    onEdit?: (entity: T) => void;
+  };
 }
 
 export function DataTable<T extends { id: string | number }>({

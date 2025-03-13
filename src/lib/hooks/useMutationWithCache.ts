@@ -1,15 +1,84 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { createData, updateData, deleteData, type ApiError } from '../api';
-import { useToast } from './useToast';
 import { supabase } from '../supabase';
 import { EVENT_TYPES } from '../constants';
+import { useToast } from './useToast';
 
 interface MutationConfig<T> {
   table: string;
   invalidateQueries?: string[];
   successMessage?: string;
   errorMessage?: string;
-  onSuccess?: (data: T) => void;
+  onSuccess?: (data: any) => void;
+}
+
+interface EntityChanges {
+  field: string;
+  oldValue: any;
+  newValue: any;
+}
+
+async function createAuditLog(
+  eventType: keyof typeof EVENT_TYPES,
+  entityId: string | number,
+  changes?: Record<string, any>,
+  table?: string
+) {
+  try {
+    const user = await supabase.auth.getUser();
+    if (!user.data.user) return;
+
+    const userId = user.data.user.id;
+    let description = '';
+    let entityChanges: EntityChanges[] = [];
+
+    if (eventType === EVENT_TYPES.UPDATE && changes) {
+      // Get the current entity data
+      const { data: currentData } = await supabase
+        .from(table!)
+        .select('*')
+        .eq('id', entityId)
+        .single();
+
+      // Compare each changed field
+      for (const [field, newValue] of Object.entries(changes)) {
+        const oldValue = currentData?.[field];
+        if (oldValue !== newValue) {
+          entityChanges.push({
+            field,
+            oldValue,
+            newValue
+          });
+        }
+      }
+
+      description = `Updated ${table} ${entityId}`;
+    } else if (eventType === EVENT_TYPES.INSERT) {
+      // Get the entity name for a more descriptive message
+      const { data: entityData } = await supabase
+        .from(table!)
+        .select('name, full_name')
+        .eq('id', entityId)
+        .single();
+      
+      const entityName = entityData?.name || entityData?.full_name || entityId;
+      description = `Created ${entityName}`;
+    } else if (eventType === EVENT_TYPES.DELETE) {
+      description = `Deleted ${table} ${entityId}`;
+    }
+
+    await supabase
+      .from('audit_logs')
+      .insert([{
+        event_type: eventType,
+        description,
+        entity_type: table,
+        entity_id: String(entityId),
+        user_id: userId,
+        changes: entityChanges.length > 0 ? entityChanges : undefined
+      }]);
+  } catch (error) {
+    console.error('Error creating audit log:', error);
+  }
 }
 
 export function useMutationWithCache<T>({
@@ -17,178 +86,135 @@ export function useMutationWithCache<T>({
   invalidateQueries = [],
   successMessage,
   errorMessage,
-  onSuccess,
+  onSuccess
 }: MutationConfig<T>) {
   const queryClient = useQueryClient();
   const { success, error: showError } = useToast();
 
-  const createAuditLog = async (
-    eventType: keyof typeof EVENT_TYPES,
-    entityId: string | number,
-    changes?: { field: string; oldValue: any; newValue: any }[]
-  ) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Get the user's name
-      const { data: userData } = await supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', user.id)
-        .single();
-      const userName = userData?.full_name || userData?.email || user.id;
-
-      // Get the entity name
-      let entityName = '';
-      switch (table) {
-        case 'profiles': {
-          const { data } = await supabase
-            .from('profiles')
-            .select('full_name, email')
-            .eq('id', entityId)
-            .single();
-          entityName = data?.full_name || data?.email || String(entityId);
-          break;
-        }
-        case 'customers': {
-          const { data } = await supabase
-            .from('customers')
-            .select('name')
-            .eq('id', entityId)
-            .single();
-          entityName = data?.name || String(entityId);
-          break;
-        }
-        case 'skills': {
-          const { data } = await supabase
-            .from('skills')
-            .select('name')
-            .eq('id', entityId)
-            .single();
-          entityName = data?.name || String(entityId);
-          break;
-        }
-      }
-
-      // Create description based on event type and changes
-      let description = '';
-      switch (eventType) {
-        case EVENT_TYPES.INSERT:
-          description = `${userName} created ${entityName}`;
-          break;
-        case EVENT_TYPES.UPDATE:
-          if (changes && changes.length > 0) {
-            const changeDescriptions = changes.map(({ field, oldValue, newValue }) => 
-              `${field}: ${oldValue} → ${newValue}`
-            );
-            description = `${userName} updated ${entityName} (${changeDescriptions.join(', ')})`;
-          } else {
-            description = `${userName} updated ${entityName}`;
-          }
-          break;
-        case EVENT_TYPES.DELETE:
-          description = `${userName} deleted ${entityName}`;
-          break;
-      }
-
-      await supabase
-        .from('audit_logs')
-        .insert([{
-          event_type: eventType,
-          description,
-          entity_type: table,
-          entity_id: String(entityId),
-          user_id: user.id
-        }]);
-    } catch (error) {
-      console.error('Error creating audit log:', error);
-    }
+  const invalidateQueriesInCache = async () => {
+    await Promise.all(
+      invalidateQueries.map(query => 
+        queryClient.invalidateQueries({ queryKey: [query] })
+      )
+    );
   };
 
-  const createMutation = useMutation<T, ApiError, Partial<T>>({
-    mutationFn: async (data) => {
-      const result = await createData<T>(table, data);
-      await createAuditLog(EVENT_TYPES.INSERT, result.id);
+  const create = useMutation({
+    mutationFn: async ({ data }: { data: Partial<T> }) => {
+      const { data: result, error } = await supabase
+        .from(table)
+        .insert([data])
+        .select()
+        .single();
+
+      if (error) throw error;
       return result;
     },
-    onSuccess: (data) => {
-      invalidateQueries.forEach(query => {
-        queryClient.invalidateQueries({ queryKey: [query] });
-      });
+    onSuccess: async (result) => {
+      await createAuditLog(EVENT_TYPES.INSERT, result.id, undefined, table);
+      await invalidateQueriesInCache();
       if (successMessage) {
         success(successMessage);
       }
-      onSuccess?.(data);
+      onSuccess?.(result);
     },
-    onError: (err) => {
-      showError(errorMessage || err.message);
-    },
+    onError: (error: Error) => {
+      console.error('Mutation error:', error);
+      if (errorMessage) showError(errorMessage);
+    }
   });
 
-  const updateMutation = useMutation<T, ApiError, { id: string | number; data: Partial<T> }>({
-    mutationFn: async ({ id, data }) => {
-      // Get current data for comparison
-      const { data: currentData } = await supabase
+  const update = useMutation({
+    mutationFn: async ({ id, data }: { id: string | number; data: Partial<T> }) => {
+      // Get the current data before updating
+      const { data: currentData, error: fetchError } = await supabase
         .from(table)
         .select('*')
         .eq('id', id)
         .single();
+      
+      if (fetchError) throw fetchError;
 
       // Perform the update
-      const result = await updateData<T>(table, id, data);
+      const { data: result, error } = await supabase
+        .from(table)
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
 
-      // Create audit log with changes
-      const changes = Object.entries(data)
-        .filter(([key, value]) => {
-          if (['updated_at', 'created_at'].includes(key)) return false;
-          return currentData[key] !== value;
-        })
-        .map(([key, value]) => ({
-          field: key,
-          oldValue: currentData[key],
-          newValue: value
-        }));
-
-      await createAuditLog(EVENT_TYPES.UPDATE, id, changes);
-      return result;
+      if (error) throw error;
+      
+      // Return both the result and original data for audit logging
+      return { result, originalData: currentData };
     },
-    onSuccess: (data) => {
-      invalidateQueries.forEach(query => {
-        queryClient.invalidateQueries({ queryKey: [query] });
-      });
+    onSuccess: async (data, variables) => {
+      // Extract changes by comparing original values with the update values
+      const changes: EntityChanges[] = [];
+      for (const [field, newValue] of Object.entries(variables.data)) {
+        if (['updated_at', 'created_at'].includes(field)) continue;
+        
+        const oldValue = data.originalData[field];
+        if (oldValue !== newValue) {
+          changes.push({
+            field,
+            oldValue,
+            newValue
+          });
+        }
+      }
+      
+      // Create audit log with detailed changes
+      await supabase
+        .from('audit_logs')
+        .insert([{
+          event_type: EVENT_TYPES.UPDATE,
+          description: `Updated ${table} ${variables.id}`,
+          entity_type: table,
+          entity_id: String(variables.id),
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          changes: changes.length > 0 ? changes : undefined
+        }]);
+        
+      await invalidateQueriesInCache();
       if (successMessage) {
         success(successMessage);
       }
-      onSuccess?.(data);
+      onSuccess?.(data.result);
     },
-    onError: (err) => {
-      showError(errorMessage || err.message);
-    },
+    onError: (error: Error) => {
+      console.error('Mutation error:', error);
+      if (errorMessage) showError(errorMessage);
+    }
   });
 
-  const deleteMutation = useMutation<void, ApiError, string | number>({
-    mutationFn: async (id) => {
-      await createAuditLog(EVENT_TYPES.DELETE, id);
-      return deleteData(table, id);
+  const remove = useMutation({
+    mutationFn: async (id: string | number) => {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      return id;
     },
-    onSuccess: () => {
-      invalidateQueries.forEach(query => {
-        queryClient.invalidateQueries({ queryKey: [query] });
-      });
+    onSuccess: async (id) => {
+      await createAuditLog(EVENT_TYPES.DELETE, id, undefined, table);
+      await invalidateQueriesInCache();
       if (successMessage) {
         success(successMessage);
       }
+      onSuccess?.(id);
     },
-    onError: (err) => {
-      showError(errorMessage || err.message);
-    },
+    onError: (error: Error) => {
+      console.error('Mutation error:', error);
+      if (errorMessage) showError(errorMessage);
+    }
   });
 
   return {
-    create: createMutation.mutate,
-    update: updateMutation.mutate,
-    delete: deleteMutation.mutate,
-    isLoading: createMutation.isLoading || updateMutation.isLoading || deleteMutation.isLoading,
+    create: create.mutateAsync,
+    update: update.mutateAsync,
+    remove: remove.mutateAsync
   };
 }

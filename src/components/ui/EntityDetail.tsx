@@ -8,7 +8,29 @@ import { useEntity } from '../../hooks/useEntity';
 import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
 import { queryKeys } from '../../lib/queryKeys';
 import type { LucideIcon } from 'lucide-react';
-import type { RelatedEntity } from '../../types';
+import type { RelationshipType } from '../ui/RelatedEntities';
+import { useQueryClient } from '@tanstack/react-query';
+
+// Define the RelatedEntity interface here so we don't need to import it
+interface RelatedEntity {
+  id: string | number;
+  name: string;
+  subtitle?: string;
+  link: string;
+  relationshipId?: string | number;
+  relationshipData?: any;
+}
+
+// Define TimelineItem interface for type safety
+interface TimelineItem {
+  id: number;
+  event_type: string;
+  description: string;
+  event_time: string;
+  entity_type: string;
+  entity_id: string;
+  user_id: string;
+}
 
 interface EntityDetailProps {
   entityType: 'profiles' | 'customers' | 'skills';
@@ -17,12 +39,13 @@ interface EntityDetailProps {
   icon: LucideIcon;
   form: React.ReactNode;
   mainContent: React.ReactNode;
+  description?: string;
   relatedEntities: {
     title: string;
     icon: LucideIcon;
     entities: RelatedEntity[];
     loading?: boolean;
-    type?: string;
+    type?: RelationshipType;
     onUpdate?: () => void;
   }[];
   onRefresh: () => Promise<void>;
@@ -39,10 +62,27 @@ export function EntityDetail({
   icon: Icon,
   form,
   mainContent,
+  description,
   relatedEntities,
   onRefresh,
   deleteInfo
 }: EntityDetailProps) {
+  const queryClient = useQueryClient();
+
+  const handleTimelineUpdate = React.useCallback(async () => {
+    // Invalidate both the entity and audit log queries
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.audit.list(entityType, entityId)
+      }),
+      queryClient.invalidateQueries({
+        queryKey: [entityType, 'detail', entityId]
+      })
+    ]);
+    // Call onRefresh to update the entity data
+    await onRefresh();
+  }, [queryClient, entityType, entityId, onRefresh]);
+
   const {
     isFormOpen,
     setIsFormOpen,
@@ -53,10 +93,10 @@ export function EntityDetail({
   } = useEntity({
     entityType,
     entityId,
-    onUpdate: onRefresh
+    onUpdate: handleTimelineUpdate // Use handleTimelineUpdate here instead of onRefresh
   });
 
-  const { data: timeline = [], isLoading: timelineLoading } = useQueryWithCache(
+  const { data: timeline = [], isLoading: timelineLoading } = useQueryWithCache<TimelineItem[]>(
     queryKeys.audit.list(entityType, entityId),
     'audit_logs',
     {
@@ -70,7 +110,7 @@ export function EntityDetail({
     ? cloneElement(form, {
         isOpen: isFormOpen,
         onClose: () => setIsFormOpen(false)
-      })
+      } as any) // Using any to bypass type checking for the cloned element props
     : null;
 
   return (
@@ -82,6 +122,11 @@ export function EntityDetail({
             onEdit={() => setIsFormOpen(true)}
             onDelete={() => setIsDeleteModalOpen(true)}
           />
+          {description && (
+            <div className="mt-2 text-gray-600 dark:text-gray-300">
+              <p>{description}</p>
+            </div>
+          )}
           {mainContent}
         </div>
       </Card>
@@ -108,11 +153,11 @@ export function EntityDetail({
           <Timeline
             title="Activity Timeline"
             icon={Icon}
-            items={timeline}
+            items={timeline as TimelineItem[]}
             loading={timelineLoading}
             entityType={entityType}
             entityId={entityId}
-            onUpdate={onRefresh}
+            onUpdate={handleTimelineUpdate}
           />
         </Card>
       </div>

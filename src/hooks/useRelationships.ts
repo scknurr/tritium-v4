@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { createRelationshipAuditLog } from '../lib/audit';
 import { EVENT_TYPES, ENTITY_TYPES, RELATIONSHIP_TYPES } from '../lib/constants';
-import type { RelationshipType } from '../types';
+
+// Define the RelationshipType interface locally if it's not exported from types
+export type RelationshipType = 'user-customer' | 'user-skill' | 'customer-skill';
 
 interface UseRelationshipsProps {
   type: RelationshipType;
@@ -263,7 +265,25 @@ export function useRelationships({
         const entityInfo = await getEntityInfo();
         const relatedInfo = await getRelatedEntityInfo(data);
 
-        if (entityInfo && relatedInfo) {
+        // Extract additional details for audit logging
+        const auditDetails: Record<string, any> = {};
+        
+        // Include role_id in audit details for user-customer relationships
+        if (type === RELATIONSHIP_TYPES.USER_CUSTOMER && data.role_id) {
+          auditDetails.role_id = data.role_id;
+        }
+        
+        // Include proficiency level for user-skill relationships
+        if (type === RELATIONSHIP_TYPES.USER_SKILL && data.proficiency_level) {
+          auditDetails.proficiency_level = data.proficiency_level;
+        }
+        
+        // Include utilization level for customer-skill relationships
+        if (type === RELATIONSHIP_TYPES.CUSTOMER_SKILL && data.utilization_level) {
+          auditDetails.utilization_level = data.utilization_level;
+        }
+
+        if (entityInfo && relatedInfo && relatedInfo.entityId) {
           await createRelationshipAuditLog({
             eventType: EVENT_TYPES.INSERT,
             entityType: entityInfo.entityType,
@@ -272,7 +292,8 @@ export function useRelationships({
             relatedEntityType: entityInfo.relatedEntityType,
             relatedEntityId: relatedInfo.entityId,
             relatedEntityName: relatedInfo.entityName,
-            userId: user.id
+            userId: user.id,
+            details: auditDetails
           });
         }
       }
@@ -302,7 +323,25 @@ export function useRelationships({
         const entityInfo = await getEntityInfo();
         const relatedInfo = await getRelatedEntityInfo(data);
 
-        if (entityInfo && relatedInfo) {
+        // Extract additional details for audit logging
+        const auditDetails: Record<string, any> = {};
+        
+        // Include role_id in audit details for user-customer relationships
+        if (type === RELATIONSHIP_TYPES.USER_CUSTOMER && data.role_id) {
+          auditDetails.role_id = data.role_id;
+        }
+        
+        // Include proficiency level for user-skill relationships
+        if (type === RELATIONSHIP_TYPES.USER_SKILL && data.proficiency_level) {
+          auditDetails.proficiency_level = data.proficiency_level;
+        }
+        
+        // Include utilization level for customer-skill relationships
+        if (type === RELATIONSHIP_TYPES.CUSTOMER_SKILL && data.utilization_level) {
+          auditDetails.utilization_level = data.utilization_level;
+        }
+
+        if (entityInfo && relatedInfo && relatedInfo.entityId) {
           await createRelationshipAuditLog({
             eventType: EVENT_TYPES.UPDATE,
             entityType: entityInfo.entityType,
@@ -311,7 +350,8 @@ export function useRelationships({
             relatedEntityType: entityInfo.relatedEntityType,
             relatedEntityId: relatedInfo.entityId,
             relatedEntityName: relatedInfo.entityName,
-            userId: user.id
+            userId: user.id,
+            details: auditDetails
           });
         }
       }

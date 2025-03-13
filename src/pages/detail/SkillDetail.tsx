@@ -4,7 +4,36 @@ import { GraduationCap, Users, Building, FolderOpen } from 'lucide-react';
 import { EntityDetail } from '../../components/ui/EntityDetail';
 import { SkillForm } from '../../components/forms/SkillForm';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
-import type { Skill, Profile, Customer } from '../../types';
+import { useMutationWithCache } from '../../lib/hooks/useMutationWithCache';
+import type { Skill, Customer } from '../../types';
+import { queryKeys } from '../../lib/queryKeys';
+import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
+
+// Define interfaces for relationships
+interface UserSkill {
+  id: number;
+  user_id: string;
+  skill_id: number;
+  proficiency_level: number;
+  user: {
+    id: string;
+    full_name: string | null;
+    email: string;
+    title?: string | null;
+  };
+}
+
+interface SkillCustomer {
+  id: number;
+  customer_id: number;
+  skill_id: number;
+  utilization_level: number;
+  customer: {
+    id: number;
+    name: string;
+    description?: string | null;
+  };
+}
 
 export function SkillDetail() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +51,17 @@ export function SkillDetail() {
     }
   );
 
-  const { data: users, loading: loadingUsers, refresh: refreshUsers } = useSupabaseQuery<Profile>(
+  const { update } = useMutationWithCache<Skill>({
+    table: 'skills',
+    invalidateQueries: [
+      `skills:detail:${id}`,
+      'skills:list',
+      `audit:skills:${id}`
+    ],
+    successMessage: 'Skill updated successfully'
+  });
+
+  const { data: users, loading: loadingUsers, refresh: refreshUsers } = useSupabaseQuery<UserSkill>(
     'user_skills',
     {
       select: '*, user:profiles(*)',
@@ -30,7 +69,7 @@ export function SkillDetail() {
     }
   );
 
-  const { data: customers, loading: loadingCustomers, refresh: refreshCustomers } = useSupabaseQuery<Customer>(
+  const { data: customers, loading: loadingCustomers, refresh: refreshCustomers } = useSupabaseQuery<SkillCustomer>(
     'customer_skills',
     {
       select: '*, customer:customers(*)',
@@ -38,7 +77,8 @@ export function SkillDetail() {
     }
   );
 
-  const { data: timeline } = useSupabaseQuery(
+  const { data: timeline = [], isLoading: timelineLoading } = useQueryWithCache(
+    queryKeys.audit.list('skills', id),
     'audit_logs',
     {
       filter: { column: 'entity_id', value: id },
@@ -61,12 +101,14 @@ export function SkillDetail() {
       entityId={Number(id)}
       title={skill.name}
       icon={GraduationCap}
+      description={skill.description || undefined}
       form={
         <SkillForm
           skill={skill}
           isOpen={false}
           onClose={() => {}}
-          onSubmit={async () => {
+          onSubmit={async (data) => {
+            await update({ id: Number(id), data });
             await refreshSkill();
           }}
         />
@@ -83,7 +125,7 @@ export function SkillDetail() {
         {
           title: "Users",
           icon: Users,
-          entities: users.map(su => ({
+          entities: users.map((su: UserSkill) => ({
             id: su.user.id,
             name: su.user.full_name || su.user.email,
             subtitle: `Proficiency: ${su.proficiency_level}`,
@@ -103,7 +145,7 @@ export function SkillDetail() {
         {
           title: "Customers",
           icon: Building,
-          entities: customers.map(sc => ({
+          entities: customers.map((sc: SkillCustomer) => ({
             id: sc.customer.id,
             name: sc.customer.name,
             subtitle: `Utilization: ${sc.utilization_level}`,

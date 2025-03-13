@@ -7,11 +7,14 @@ export function useQueryWithCache<T>(
   options: QueryOptions = null,
   queryOptions: Omit<UseQueryOptions<T[], ApiError>, 'queryKey' | 'queryFn'> = {}
 ) {
+  // Use a shorter staleTime for audit logs to make them more responsive
+  const staleTime = table === 'audit_logs' ? 0 : 1000 * 60 * 5; // 0 for audit logs, 5 minutes for others
+
   return useQuery<T[], ApiError>({
     queryKey,
     queryFn: () => fetchData<T>(table, options),
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    cacheTime: 1000 * 60 * 30, // 30 minutes
+    staleTime,
+    gcTime: 1000 * 60 * 30, // 30 minutes
     ...queryOptions,
   });
 }

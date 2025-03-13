@@ -10,6 +10,7 @@ import { Dashboard } from './pages/Dashboard';
 import { UserDetail } from './pages/detail/UserDetail';
 import { CustomerDetail } from './pages/detail/CustomerDetail';
 import { SkillDetail } from './pages/detail/SkillDetail';
+import { TestPage } from './pages/TestPage';
 import { supabase } from './lib/supabase';
 import { useDarkMode } from './hooks/useDarkMode';
 import type { User } from '@supabase/supabase-js';
@@ -61,6 +62,7 @@ function App() {
               <SkillDetail />
             } />
             <Route path="settings" element={<Settings />} />
+            <Route path="debug" element={<TestPage />} />
             {/* Redirect invalid skill UUIDs to users */}
             <Route path="skills/:id" element={
               <Navigate to="/users/:id" replace />

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { PostgrestError } from '@supabase/supabase-js';
+import type { Customer, Skill, SkillApplication } from '../types';
 
 export type QueryOptions = {
   select?: string;
@@ -130,4 +131,116 @@ export async function fetchEntityById<T>(
   }
 
   return data;
+}
+
+// Skill Applications API
+export const getUserSkillApplications = async (userId: string) => {
+  const { data, error } = await supabase
+    .rpc('get_user_skill_applications', { p_user_id: userId });
+  
+  if (error) throw error;
+  return data;
+};
+
+export const getCustomerSkillApplications = async (customerId: number) => {
+  const { data, error } = await supabase
+    .rpc('get_customer_skill_applications', { p_customer_id: customerId });
+  
+  if (error) throw error;
+  return data;
+};
+
+export const createSkillApplication = async (skillApplication: Omit<SkillApplication, 'id' | 'created_at' | 'updated_at'>) => {
+  const { data, error } = await supabase
+    .from('skill_applications')
+    .insert(skillApplication)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+};
+
+export const updateSkillApplication = async (id: number, updates: Partial<Omit<SkillApplication, 'id' | 'created_at' | 'updated_at'>>) => {
+  const { data, error } = await supabase
+    .from('skill_applications')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+};
+
+export const deleteSkillApplication = async (id: number) => {
+  const { error } = await supabase
+    .from('skill_applications')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+  return true;
+};
+
+export const getSkillApplication = async (id: number) => {
+  try {
+    const { data, error } = await supabase
+      .from('skill_applications')
+      .select(`
+        id,
+        user_id,
+        skill_id,
+        customer_id,
+        proficiency,
+        start_date,
+        end_date,
+        notes,
+        created_at,
+        updated_at,
+        skills:skill_id(id, name),
+        customers:customer_id(id, name),
+        profiles:user_id(id, full_name)
+      `)
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    
+    if (data) {
+      // Safely extract names from potentially undefined objects
+      const skillName = data.skills && typeof data.skills === 'object' ? data.skills.name : undefined;
+      const customerName = data.customers && typeof data.customers === 'object' ? data.customers.name : undefined;
+      const userName = data.profiles && typeof data.profiles === 'object' ? data.profiles.full_name : undefined;
+      
+      return {
+        ...data,
+        skill_name: skillName,
+        customer_name: customerName,
+        user_name: userName
+      };
+    }
+    
+    return null;
+  } catch (err) {
+    console.error('Error fetching skill application:', err);
+    throw err;
+  }
+};
+
+export async function query<T>(
+  query: Promise<{
+    data: T | null;
+    error: PostgrestError | null;
+  }>
+): Promise<{ data: T | null; error: string | null }> {
+  try {
+    const { data, error } = await query;
+    if (error) {
+      return { data: null, error: error.message };
+    }
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: (error as Error).message };
+  }
 }

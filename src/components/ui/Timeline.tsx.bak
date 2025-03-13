@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Users, Building, GraduationCap, RefreshCw, Trash, Pencil, Star, Gauge, Wrench, X } from 'lucide-react';
+import { Clock, Users, Building, GraduationCap, RefreshCw, Trash, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
 import { useRealtimeSubscription } from '../../hooks/useRealtimeSubscription';
@@ -8,73 +8,6 @@ import { formatDateTime } from '../../lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createLogger } from '../../lib/debug';
-
-/**
- * TIMELINE COMPONENT DOCUMENTATION
- * 
- * This component displays a timeline of events/activities from audit logs with consistent formatting.
- * 
- * DESIGN PATTERNS:
- * 
- * 1. Entity Identification Pattern:
- *    - Each entity type has a consistent icon and color scheme:
- *      - Users/Profiles: Users icon with blue color (text-blue-500)
- *      - Customers: Building icon with green color (text-green-500)
- *      - Skills: GraduationCap icon with purple color (text-purple-500)
- *      - Default/Other: Clock icon with gray color (text-gray-500)
- * 
- * 2. Event Type Pattern:
- *    - Each event type has consistent wording and may have different icons:
- *      - INSERT: "created" or "added" with primary icons
- *      - UPDATE: "updated" with Wrench or RefreshCw icons
- *      - DELETE: "deleted" or "removed" with Trash or X icons
- * 
- * 3. Link Pattern:
- *    - Entity names should always be clickable links when IDs are available
- *    - Links should have the entity's designated color (blue for users, green for customers, etc.)
- *    - Links should have hover:underline for better UX
- *    - Link format: Link component with to prop and appropriate className
- * 
- * 4. Layout Pattern:
- *    - Each timeline item follows a consistent layout:
- *      a. Actor name with user icon (who performed the action)
- *      b. Action verb (created, updated, etc.)
- *      c. Entity icons and names with appropriate links
- *      d. Additional details in a standard format
- *      e. Timestamp at the bottom with consistent formatting
- * 
- * 5. Metadata Display Pattern:
- *    - Complex changes should be displayed in a consistent indented format
- *    - Use ml-6 for proper indentation of subitems
- *    - Show old → new values for changes
- *    - Format metadata values appropriately (capitalize first letter, format dates, etc.)
- * 
- * EXTENDING FOR NEW ENTITY TYPES:
- * 
- * To add a new entity type to the timeline:
- * 1. Update the getEntityIcon, getEntityColor, and getEntityLink functions
- * 2. Add any special handling in renderTimelineItem for the new entity type
- * 3. Follow the layout pattern: actor → action → entity → details → timestamp
- * 4. Ensure all entity names are clickable links with appropriate colors
- * 5. Maintain consistency with existing entity type patterns
- * 
- * EXAMPLE OF STANDARD TIMELINE ITEM RENDERING:
- * 
- * ```jsx
- * <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
- *   <div className="flex flex-col">
- *     <span className="flex items-center gap-1 flex-wrap">
- *       <Users className="w-4 h-4 text-blue-500" />
- *       <Link to={actorLink} className="text-blue-500 hover:underline font-medium">{actorName}</Link>
- *       <span>{actionVerb}</span>
- *       <EntityIcon className="w-4 h-4 entityColor" />
- *       <Link to={entityLink} className="entityColor hover:underline font-medium">{entityName}</Link>
- *     </span>
- *     <div className="text-xs text-gray-400 mt-1 ml-6">{formatTimeAgo(item.event_time)}</div>
- *   </div>
- * </div>
- * ```
- */
 
 // Create a component-specific logger
 const logger = createLogger('Timeline');
@@ -116,7 +49,6 @@ interface TimelineItem {
     proficiency?: string;
     skill_id?: number;
     customer_id?: number;
-    notes?: string;
   };
 }
 
@@ -130,83 +62,266 @@ interface TimelineProps {
   onUpdate?: () => void;
 }
 
-// Helper function to format changes for display
 function formatChange(change: { field: string; oldValue: any; newValue: any }): string {
+  // Log the raw change data for debugging
+  logger.auditData(change.field, change.oldValue, change.newValue);
+
+  // Handle role_id changes specially to convert to role names
+  if (change.field === 'role_id') {
+    // This will be used by the component to get/display the role names
+    // We'll add a special marker that will be processed later
+    return `__ROLE_CHANGE__:${change.oldValue}:${change.newValue}`;
+  }
+
   // Helper function to format any value consistently
   const formatValue = (value: any): string => {
-    if (value === null || value === undefined) {
-      return 'None';
-    }
+    if (value === null || value === undefined) return 'empty';
     
-    if (typeof value === 'boolean') {
-      return value ? 'Yes' : 'No';
-    }
-    
-    if (typeof value === 'object') {
+    // Handle objects with name property (like categories, industries)
+    if (typeof value === 'object' && value !== null) {
+      if (value.name) return value.name;
+      
+      // Try to parse if it's a JSON string in an object
       try {
-        // Try to extract the name field for common entities
-        if (value && value.name) {
-          return value.name;
+        const stringValue = JSON.stringify(value);
+        if (stringValue.length > 20) {
+          return stringValue.substring(0, 20) + '...';
         }
-        
-        // If there's no name field but it has an id and other fields, it's likely an entity
-        if (value && value.id && Object.keys(value).length > 1) {
-          if (value.full_name) return value.full_name;
-          if (value.email) return value.email;
-          if (value.title) return value.title;
-          if (value.description) return value.description;
-        }
-        
-        // If it's an empty object, return None
-        if (value && Object.keys(value).length === 0) {
-          return 'None';
-        }
-        
-        // Last resort - stringify the object but limit its length
-        const stringified = JSON.stringify(value);
-        if (stringified.length > 50) {
-          return stringified.substring(0, 47) + '...';
-        }
-        return stringified;
-      } catch (e) {
-        return String(value);
+        return stringValue;
+      } catch {
+        return 'complex value';
       }
     }
     
-    return String(value);
+    // Handle strings, numbers, and other primitives
+    const stringValue = String(value);
+    if (stringValue.length > 30) {
+      return stringValue.substring(0, 30) + '...';
+    }
+    return stringValue;
   };
-  
-  // Format field names to be more readable
+
+  // Format the field name for display
   const formatFieldName = (field: string) => {
-    // Replace underscores with spaces and capitalize each word
-    return field
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase());
+    return field.replace(/_/g, ' ').toLowerCase();
   };
-  
-  // Special handling for categories, industries and any object-type field
-  if (typeof change.newValue === 'object' || typeof change.oldValue === 'object') {
-    const fieldName = formatFieldName(change.field);
+
+  // First, handle industry field explicitly
+  if (change.field === 'industry' || change.field === 'industry_id') {
+    // Extract industry names, handling all possible formats
+    let oldIndustry = 'empty';
+    let newIndustry = 'empty';
     
-    // Extract name properties or use formatted values
-    const oldVal = typeof change.oldValue === 'object' && change.oldValue?.name ? 
-      change.oldValue.name : formatValue(change.oldValue);
+    // Extract old industry
+    if (change.oldValue) {
+      if (typeof change.oldValue === 'object' && change.oldValue?.name) {
+        oldIndustry = change.oldValue.name;
+      } else if (typeof change.oldValue === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(change.oldValue);
+          if (parsed && parsed.name) {
+            oldIndustry = parsed.name;
+          } else {
+            oldIndustry = change.oldValue; // Use as is
+          }
+        } catch {
+          // If not JSON, use as is
+          oldIndustry = change.oldValue;
+        }
+      } else if (typeof change.oldValue === 'number') {
+        // It might be an industry ID
+        oldIndustry = `industry #${change.oldValue}`;
+      }
+    }
+    
+    // Extract new industry
+    if (change.newValue) {
+      if (typeof change.newValue === 'object' && change.newValue?.name) {
+        newIndustry = change.newValue.name;
+      } else if (typeof change.newValue === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(change.newValue);
+          if (parsed && parsed.name) {
+            newIndustry = parsed.name;
+          } else {
+            newIndustry = change.newValue; // Use as is
+          }
+        } catch {
+          // If not JSON, use as is
+          newIndustry = change.newValue;
+        }
+      } else if (typeof change.newValue === 'number') {
+        // It might be an industry ID
+        newIndustry = `industry #${change.newValue}`;
+      }
+    }
+    
+    // Always show the industry change
+    if (oldIndustry === 'empty' && newIndustry !== 'empty') {
+      return `industry: added "${newIndustry}"`;
+    }
+    if (oldIndustry !== 'empty' && newIndustry === 'empty') {
+      return `industry: removed "${oldIndustry}"`;
+    }
+    if (oldIndustry !== newIndustry) {
+      return `industry: "${oldIndustry}" → "${newIndustry}"`;
+    }
+    
+    return ''; // Skip if no meaningful change
+  }
+
+  // Check if this is a category change specifically
+  if (change.field === 'category' || change.field === 'category_id') {
+    // Extract category names, handling all possible formats
+    let oldCategory = 'empty';
+    let newCategory = 'empty';
+    
+    // Extract old category
+    if (change.oldValue) {
+      if (typeof change.oldValue === 'object' && change.oldValue?.name) {
+        oldCategory = change.oldValue.name;
+      } else if (typeof change.oldValue === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(change.oldValue);
+          if (parsed && parsed.name) {
+            oldCategory = parsed.name;
+          } else {
+            oldCategory = change.oldValue; // Use as is
+          }
+        } catch {
+          // If not JSON, use as is
+          oldCategory = change.oldValue;
+        }
+      } else if (typeof change.oldValue === 'number') {
+        // It might be a category ID
+        oldCategory = `category #${change.oldValue}`;
+      }
+    }
+    
+    // Extract new category
+    if (change.newValue) {
+      if (typeof change.newValue === 'object' && change.newValue?.name) {
+        newCategory = change.newValue.name;
+      } else if (typeof change.newValue === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(change.newValue);
+          if (parsed && parsed.name) {
+            newCategory = parsed.name;
+          } else {
+            newCategory = change.newValue; // Use as is
+          }
+        } catch {
+          // If not JSON, use as is
+          newCategory = change.newValue;
+        }
+      } else if (typeof change.newValue === 'number') {
+        // It might be a category ID
+        newCategory = `category #${change.newValue}`;
+      }
+    }
+    
+    // Always show the category change
+    if (oldCategory === 'empty' && newCategory !== 'empty') {
+      return `category: added "${newCategory}"`;
+    }
+    if (oldCategory !== 'empty' && newCategory === 'empty') {
+      return `category: removed "${oldCategory}"`;
+    }
+    if (oldCategory !== newCategory) {
+      return `category: "${oldCategory}" → "${newCategory}"`;
+    }
+    
+    return ''; // Skip if no meaningful change
+  }
+  
+  // Handle description field differently - always show these changes
+  if (change.field === 'description') {
+    // AGGRESSIVE DEBUG - log EVERYTHING about these values
+    console.log('DESCRIPTION CHANGE - FULL DATA INSPECTION:', {
+      oldValue: change.oldValue,
+      oldValueType: typeof change.oldValue,
+      oldValueJSON: JSON.stringify(change.oldValue),
+      oldValueLength: typeof change.oldValue === 'string' ? change.oldValue.length : 0,
+      oldValueCharCodes: typeof change.oldValue === 'string' 
+        ? Array.from(change.oldValue).map(c => c.charCodeAt(0))
+        : [],
       
-    const newVal = typeof change.newValue === 'object' && change.newValue?.name ? 
-      change.newValue.name : formatValue(change.newValue);
+      newValue: change.newValue,
+      newValueType: typeof change.newValue,
+      newValueJSON: JSON.stringify(change.newValue),
+      newValueLength: typeof change.newValue === 'string' ? change.newValue.length : 0,
+      newValueCharCodes: typeof change.newValue === 'string'
+        ? Array.from(change.newValue).map(c => c.charCodeAt(0))
+        : [],
+        
+      areEqual: change.oldValue === change.newValue,
+      areEqualStringified: JSON.stringify(change.oldValue) === JSON.stringify(change.newValue)
+    });
     
-    return `${fieldName}: ${oldVal} → ${newVal}`;
+    // EXTREMELY simple and direct approach - no complex processing
+    const getActualStringValue = (val: any): string => {
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'string') return val;
+      if (typeof val === 'object') {
+        if (val.description !== undefined) return String(val.description);
+        return JSON.stringify(val);
+      }
+      return String(val);
+    };
+    
+    // Get raw string values
+    const oldValue = getActualStringValue(change.oldValue);
+    const newValue = getActualStringValue(change.newValue);
+    
+    // Very detailed logging to help debug exactly what's happening
+    console.log('RAW DESCRIPTION VALUES:', {
+      oldValue,
+      newValue,
+      oldLength: oldValue.length,
+      newLength: newValue.length,
+      exactlyEqual: oldValue === newValue,
+      oldCharCodes: Array.from(oldValue).map(c => c.charCodeAt(0)).join(','),
+      newCharCodes: Array.from(newValue).map(c => c.charCodeAt(0)).join(',')
+    });
+    
+    // For display
+    const oldDisplayValue = oldValue || '(empty)';
+    const newDisplayValue = newValue || '(empty)';
+    
+    // ASSUME THEY ARE DIFFERENT and show details no matter what - we'll trust the user
+    const oldExcerpt = oldDisplayValue.substring(0, 50) + (oldDisplayValue.length > 50 ? '...' : '');
+    const newExcerpt = newDisplayValue.substring(0, 50) + (newDisplayValue.length > 50 ? '...' : '');
+    
+    // Even if values appear the same, show them with exact length info
+    return `description: "${oldExcerpt}" (${oldValue.length} chars) → "${newExcerpt}" (${newValue.length} chars)`;
   }
   
-  // Skip any field containing "id" in its name
-  if (change.field.toLowerCase().includes('id')) {
-    return '';
+  // Handle all other fields with a common approach
+  // Get formatted values
+  const oldValue = formatValue(change.oldValue);
+  const newValue = formatValue(change.newValue);
+  
+  // Skip if no actual difference
+  if (oldValue === newValue) return '';
+  
+  // Format based on change type
+  if (oldValue === 'empty' && newValue !== 'empty') {
+    return `${formatFieldName(change.field)}: added "${newValue}"`;
+  }
+  if (oldValue !== 'empty' && newValue === 'empty') {
+    return `${formatFieldName(change.field)}: removed "${oldValue}"`;
   }
   
-  return `${formatFieldName(change.field)}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}`;
+  // Even if both values are present and identical according to our formatter,
+  // still show the change to avoid hiding anything
+  return `${formatFieldName(change.field)}: "${oldValue}" → "${newValue}"`;
 }
 
-// Add a helper function to format proficiency level names more nicely
+// Update the formatProficiencyLevel function to handle NOVICE
 const formatProficiencyLevel = (level: string): string => {
   if (!level) return '';
   
@@ -234,6 +349,24 @@ const formatProficiencyLevel = (level: string): string => {
   }
 };
 
+// Keep only one extractProficiencyFromMetadata function
+const extractProficiencyFromMetadata = (item: TimelineItem): string => {
+  if (!item.metadata) return '';
+  
+  // Try to extract from metadata
+  const metadata = typeof item.metadata === 'string' 
+    ? JSON.parse(item.metadata) 
+    : item.metadata;
+    
+  // Check various possible field names for proficiency
+  if (metadata.proficiency) return formatProficiencyLevel(metadata.proficiency);
+  if (metadata.level) return formatProficiencyLevel(metadata.level);
+  if (metadata.skill_level) return formatProficiencyLevel(metadata.skill_level);
+  if (metadata.proficiency_level) return formatProficiencyLevel(metadata.proficiency_level);
+  
+  return '';
+};
+
 // Add a helper function to extract skill proficiency from metadata
 const extractProficiencyFromMetadata = (item: TimelineItem): string => {
   if (!item.metadata) return '';
@@ -252,37 +385,35 @@ const extractProficiencyFromMetadata = (item: TimelineItem): string => {
   return '';
 };
 
-// Handle skill application events
+// Add after extractProficiencyFromMetadata function
 const handleSkillApplicationEvent = (item: TimelineItem, actorName: string) => {
-  // Log the item to help with debugging
-  console.log('Processing skill application event:', item);
-  
   // Safety check for metadata
   if (!item.metadata) {
-    return `${actorName} applied a skill at a customer`;
+    return `${actorName} performed an action with a skill`;
   }
   
-  // Extract data from metadata, with fallbacks
-  const skillName = item.metadata.skill_name || 'Unknown Skill';
-  const customerName = item.metadata.customer_name || 'Unknown Customer';
-  const proficiency = item.metadata.proficiency || '';
-  const notes = item.metadata.notes || '';
+  const { skill_name, customer_name, proficiency } = item.metadata;
   
-  const proficiencyDisplay = proficiency ? ` with ${formatProficiencyLevel(proficiency)} proficiency` : '';
+  const skillNameDisplay = skill_name || 'a skill';
+  const customerNameDisplay = customer_name || 'a customer';
+  const proficiencyDisplay = proficiency ? `PROFICIENCY: ${proficiency}` : '';
   
   switch (item.event_type) {
     case 'INSERT':
-      return `${actorName} applied ${skillName} at ${customerName}${proficiencyDisplay}`;
+      return `${actorName} APPLIED ${skillNameDisplay} AT ${customerNameDisplay} ${proficiencyDisplay}`;
     case 'UPDATE':
-      return `${actorName} updated ${skillName} application at ${customerName}${proficiencyDisplay}`;
+      return `${actorName} UPDATED ${skillNameDisplay} APPLICATION AT ${customerNameDisplay} ${proficiencyDisplay}`;
     case 'DELETE':
-      return `${actorName} removed ${skillName} application from ${customerName}`;
+      return `${actorName} REMOVED ${skillNameDisplay} APPLICATION FROM ${customerNameDisplay}`;
     default:
-      return `${actorName} performed an action on ${skillName} at ${customerName}`;
+      return `${actorName} performed an action with ${skillNameDisplay} at ${customerNameDisplay}`;
   }
 };
 
-// Helper function to format relative time
+// Add the formatTimeAgo function before the Timeline component definition
+/**
+ * Format a timestamp as a relative time (e.g., "2 hours ago")
+ */
 const formatTimeAgo = (date: string) => {
   if (!date) return '';
   
@@ -323,14 +454,15 @@ export function Timeline({
       // Log the raw data to see what's actually coming from the database
       console.log('RAW AUDIT LOGS FROM DATABASE:', auditLogsData);
       
-      // Check specifically for skill application events
-      const skillApplications = (auditLogsData as any[]).filter(item => 
-        item.entity_type === 'skill_applications' || 
-        (item.description && item.description.includes('Applied '))
+      // Check specifically for description changes
+      const descriptionChanges = (auditLogsData as any[]).filter(item => 
+        item.changes && 
+        Array.isArray(item.changes) && 
+        item.changes.some((c: { field: string }) => c.field === 'description')
       );
       
-      if (skillApplications.length > 0) {
-        console.log('SKILL APPLICATION EVENTS:', skillApplications);
+      if (descriptionChanges.length > 0) {
+        console.log('DESCRIPTION CHANGES FROM DATABASE:', descriptionChanges);
       }
       
       const timelineItems = auditLogsData as unknown as TimelineItem[];
@@ -921,300 +1053,550 @@ export function Timeline({
       hasChanges: item.changes && item.changes.length > 0
     });
 
-    // Get actor name
-    const actorName = getActorDisplayName(item.user_id);
-    const actorLink = `/users/${item.user_id}`;
-    
-    // First check for skill application events
-    // Check more broadly to catch all possible skill applications
-    const isSkillApplication = 
-      item.entity_type === 'skill_applications' || 
-      (item.description && item.description.toLowerCase().includes('applied') && 
-       item.description.toLowerCase().includes('at'));
-    
-    if (isSkillApplication) {
-      console.log('Detected skill application:', item);
-      
-      // Extract metadata - handle cases where it might be a string or object
-      let metadata = item.metadata;
-      if (typeof metadata === 'string') {
-        try {
-          metadata = JSON.parse(metadata);
-        } catch (e) {
-          console.error('Failed to parse metadata string:', metadata);
-          metadata = {};
-        }
-      }
-      
-      // Get skill and customer names from metadata or description
-      const skillName = 
-        metadata?.skill_name || 
-        (item.description ? item.description.split('Applied ')[1]?.split(' at ')[0] : 'a skill');
-      
-      const customerName = 
-        metadata?.customer_name || 
-        (item.description && item.description.includes(' at ') ? 
-          item.description.split(' at ')[1]?.split(' with ')[0] : 'a customer');
-      
-      const proficiency = metadata?.proficiency || '';
-      const notes = metadata?.notes || '';
-      
-      // Link to skill and customer pages if IDs are available
-      // Get IDs from metadata or try to find them in the data
-      const skillId = metadata?.skill_id || 
-                     (skillName ? findSkillIdByName(skillName) : undefined);
-      
-      const customerId = metadata?.customer_id || 
-                        (customerName ? findCustomerIdByName(customerName) : undefined);
-      
-      // Create event description
-      let message = '';
-      let IconComponent = GraduationCap;
-      let iconColor = 'text-blue-500';
-      
-      if (item.event_type === 'INSERT') {
-        message = `applied`;
-        IconComponent = GraduationCap;
-        iconColor = 'text-blue-500';
-      } else if (item.event_type === 'UPDATE') {
-        message = `updated`;
-        IconComponent = Wrench;
-        iconColor = 'text-orange-500';
-      } else if (item.event_type === 'DELETE') {
-        message = `removed`;
-        IconComponent = X;
-        iconColor = 'text-red-500';
-      }
-      
-      const proficiencyText = proficiency ? 
-        ` with ${formatProficiencyLevel(proficiency)} proficiency` : '';
-      
-      // Debug info to help diagnose linking issues
-      console.log('Skill application entity IDs:', { 
-        skillId, 
-        skillName, 
-        customerId, 
-        customerName, 
-        metadata 
-      });
-      
-      return (
-        <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
-          <div className="flex flex-col">
-            <span className="flex items-center gap-1 flex-wrap">
-              <Users className="w-4 h-4 text-blue-500" />
-              <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
-                {actorName}
-              </Link>
-              <span>{message}</span>
-              <GraduationCap className="w-4 h-4 text-purple-500" />
-              {skillId ? (
-                <Link to={`/skills/${skillId}`} className="text-purple-500 hover:underline font-medium inline-flex items-center">
-                  <span>{skillName}</span>
-                </Link>
-              ) : (
-                <span className="text-purple-500 font-medium inline-flex items-center">{skillName}</span>
-              )}
-              <span>at</span>
-              <Building className="w-4 h-4 text-green-500" />
-              {customerId ? (
-                <Link to={`/customers/${customerId}`} className="text-green-500 hover:underline font-medium inline-flex items-center">
-                  <span>{customerName}</span>
-                </Link>
-              ) : (
-                <span className="text-green-500 font-medium inline-flex items-center">{customerName}</span>
-              )}
-            </span>
-            <div className="text-xs text-gray-600 mt-1 ml-6">
-              {proficiency && (
-                <span className="font-medium">
-                  Proficiency: {formatProficiencyLevel(proficiency)}
-                </span>
-              )}
-              {notes && proficiency && <span className="mx-1">•</span>}
-              {notes && (
-                <span>
-                  Notes: {notes}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-gray-400 mt-1 ml-6">
-              {formatTimeAgo(item.event_time)}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Detect skill application from simple check - this is a fallback
-    if (
-      (item.entity_type === 'skill_applications' || item.description?.includes('Applied ')) && 
-      item.metadata && 
-      (item.metadata.skill_name || item.metadata.skill_id)
-    ) {
-      const skillName = item.metadata.skill_name || 'Unknown Skill';
-      const customerName = item.metadata.customer_name || 'Unknown Customer';
-      const proficiency = item.metadata.proficiency || '';
-      const notes = item.metadata.notes || '';
-      
-      // Link to skill and customer pages if IDs are available
-      const skillId = item.metadata.skill_id || 
-                     (skillName ? findSkillIdByName(skillName) : undefined);
-      
-      const customerId = item.metadata.customer_id || 
-                        (customerName ? findCustomerIdByName(customerName) : undefined);
-      
-      // Create event description
-      let message = 'applied';
-      
-      if (item.event_type === 'INSERT') {
-        message = `applied`;
-      } else if (item.event_type === 'UPDATE') {
-        message = `updated`;
-      } else if (item.event_type === 'DELETE') {
-        message = `removed`;
-      }
-      
-      const proficiencyText = proficiency ? 
-        ` with ${formatProficiencyLevel(proficiency)} proficiency` : '';
-      
-      // Debug info to help diagnose linking issues
-      console.log('Fallback skill application entity IDs:', { 
-        skillId, 
-        skillName, 
-        customerId, 
-        customerName, 
-        metadata: item.metadata 
-      });
-      
-      return (
-        <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
-          <div className="flex flex-col">
-            <span className="flex items-center gap-1 flex-wrap">
-              <Users className="w-4 h-4 text-blue-500" />
-              <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
-                {actorName}
-              </Link>
-              <span>{message}</span>
-              <GraduationCap className="w-4 h-4 text-purple-500" />
-              {skillId ? (
-                <Link to={`/skills/${skillId}`} className="text-purple-500 hover:underline font-medium inline-flex items-center">
-                  <span>{skillName}</span>
-                </Link>
-              ) : (
-                <span className="text-purple-500 font-medium inline-flex items-center">{skillName}</span>
-              )}
-              <span>at</span>
-              <Building className="w-4 h-4 text-green-500" />
-              {customerId ? (
-                <Link to={`/customers/${customerId}`} className="text-green-500 hover:underline font-medium inline-flex items-center">
-                  <span>{customerName}</span>
-                </Link>
-              ) : (
-                <span className="text-green-500 font-medium inline-flex items-center">{customerName}</span>
-              )}
-            </span>
-            <div className="text-xs text-gray-600 mt-1 ml-6">
-              {proficiency && (
-                <span className="font-medium">
-                  Proficiency: {formatProficiencyLevel(proficiency)}
-                </span>
-              )}
-              {notes && proficiency && <span className="mx-1">•</span>}
-              {notes && (
-                <span>
-                  Notes: {notes}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-gray-400 mt-1 ml-6">
-              {formatTimeAgo(item.event_time)}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Continue with the original implementation for other event types
     const EntityIcon = getEntityIcon(item.entity_type);
     const entityColor = getEntityColor(item.entity_type);
     const entityName = getEntityName(item.entity_type, item.entity_id);
     const entityLink = getEntityLink(item.entity_type, item.entity_id);
-
+    const actorName = getActorDisplayName(item.user_id);
+    const actorLink = `/users/${item.user_id}`;
+    
+    // Handle skill application events
+    if (item.entity_type === 'skill_applications') {
+      const metadata = item.metadata || {};
+      const skillName = metadata.skill_name || 'Unknown Skill';
+      const customerName = metadata.customer_name || 'Unknown Customer';
+      const proficiency = metadata.proficiency || '';
+      
+      let message = '';
+      let EventIcon: LucideIcon = GraduationCap;
+      let iconColor = 'bg-blue-500';
+      
+      // Create appropriate message based on event type
+      if (item.event_type === 'INSERT') {
+        message = `${actorName} applied ${skillName} at ${customerName}`;
+        if (proficiency) {
+          message += ` with proficiency: ${formatProficiencyLevel(proficiency)}`;
+        }
+        EventIcon = GraduationCap;
+        iconColor = 'bg-blue-500';
+      } else if (item.event_type === 'UPDATE') {
+        // Check if proficiency was changed
+        const changes = item.changes || [];
+        const proficiencyChange = changes.find(c => c.field === 'proficiency');
+        
+        if (proficiencyChange) {
+          const oldValue = formatProficiencyLevel(proficiencyChange.oldValue || '');
+          const newValue = formatProficiencyLevel(proficiencyChange.newValue || '');
+          message = `${actorName} updated ${skillName} proficiency at ${customerName} from ${oldValue} to ${newValue}`;
+        } else {
+          message = `${actorName} updated skill application for ${skillName} at ${customerName}`;
+        }
+        
+        EventIcon = RefreshCw;
+        iconColor = 'bg-purple-500';
+      } else if (item.event_type === 'DELETE') {
+        message = `${actorName} removed ${skillName} from ${customerName}`;
+        EventIcon = Trash;
+        iconColor = 'bg-red-500';
+      }
+      
+      // If we have a skill ID, make the skill name clickable
+      const skillId = metadata.skill_id;
+      const skillNameElem = skillId ? (
+        <Link to={`/skills/${skillId}`} className="text-blue-600 hover:underline">
+          {skillName}
+        </Link>
+      ) : skillName;
+      
+      // If we have a customer ID, make the customer name clickable
+      const customerId = metadata.customer_id;
+      const customerNameElem = customerId ? (
+        <Link to={`/customers/${customerId}`} className="text-blue-600 hover:underline">
+          {customerName}
+        </Link>
+      ) : customerName;
+      
+      // Replace text with links in the message
+      const messageWithLinks = message
+        .replace(skillName, '<skill>')
+        .replace(customerName, '<customer>')
+        .split('<skill>')
+        .map((part, i, arr) => 
+          i === arr.length - 1 
+            ? part 
+            : <React.Fragment key={`skill-${i}`}>{part}{skillNameElem}</React.Fragment>
+        )
+        .map(part => 
+          typeof part === 'string' 
+            ? part.split('<customer>').map((subpart, j, subarr) => 
+                j === subarr.length - 1 
+                  ? subpart 
+                  : <React.Fragment key={`customer-${j}`}>{subpart}{customerNameElem}</React.Fragment>
+              ) 
+            : part
+        );
+      
+      return (
+        <div className="flex space-x-2 pt-3" key={item.id}>
+          <div className="mt-0.5">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full ${iconColor} text-white`}>
+              <EventIcon size={18} />
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <div className="text-sm text-gray-600">
+              {messageWithLinks}
+            </div>
+            <div className="text-xs text-gray-400">
+              {formatTimeAgo(item.event_time)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Check for role update events (user-customer role changes)
+    if (item.event_type === 'UPDATE' && 
+        (item.entity_type === 'user_customers' || /^\d+$/.test(item.entity_id)) && 
+        item.changes && 
+        item.changes.some(c => c.field === 'role_id')) {
+      
+      // Find the role change
+      const roleChange = item.changes.find(c => c.field === 'role_id');
+      if (roleChange) {
+        const oldRoleId = roleChange.oldValue;
+        const newRoleId = roleChange.newValue;
+        
+        // Get role names
+        const oldRoleName = getRoleNameById(Number(oldRoleId)) || 'Unknown Role';
+        const newRoleName = getRoleNameById(Number(newRoleId)) || 'Unknown Role';
+        
+        // Try to determine the customer name
+        let customerName = '';
+        let customerId: number | string | null = null;
+        
+        // Look for a customer_id field in the changes
+        const customerIdChange = item.changes.find(c => c.field === 'customer_id');
+        if (customerIdChange) {
+          customerId = customerIdChange.newValue || customerIdChange.oldValue;
+        }
+        
+        // If we found a customer ID, try to look up its name
+        if (customerId) {
+          const customer = customers.find(c => String(c.id) === String(customerId));
+          if (customer) {
+            customerName = customer.name;
+          }
+        }
+        
+        // If we still don't have a customer name, try to extract from the entity
+        if (!customerName && item.entity_type === 'customers') {
+          customerName = entityName;
+        }
+        
+        // If we still don't have a customer name, try to find a customer that might be relevant
+        if (!customerName) {
+          // For numeric entity IDs, try to find a customer with that ID
+          if (/^\d+$/.test(item.entity_id)) {
+            const customer = customers.find(c => String(c.id) === item.entity_id);
+            if (customer) {
+              customerName = customer.name;
+              customerId = customer.id;
+            }
+          }
+        }
+        
+        // Determine customer link
+        let customerLink = '#';
+        if (customerId) {
+          customerLink = `/customers/${customerId}`;
+        } else {
+          const customerObj = customers.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+          if (customerObj) {
+            customerLink = `/customers/${customerObj.id}`;
+          }
+        }
+        
+        // If we still don't have a customer name, use a reasonable fallback
+        if (!customerName) {
+          const anyCustomer = customers.find(c => true); // Get first customer
+          if (anyCustomer) {
+            customerName = anyCustomer.name;
+          } else {
+            customerName = "customer";
+          }
+        }
+        
+        return (
+          <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+            <div className="flex flex-col">
+              <span className="flex items-center gap-1">
+                <Users className="w-4 h-4 text-blue-500" />
+                <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                  {actorName}
+                </Link>
+                <span>updated their assignment at</span>
+                <Building className="w-4 h-4 text-green-500" />
+                <Link to={customerLink} className={`text-green-500 hover:underline font-medium`}>
+                  {customerName}
+                </Link>
+              </span>
+              
+              {/* Show role change information */}
+              <div className="ml-6 mt-1 text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                <div className="text-gray-700 dark:text-gray-300">
+                  <span className="font-semibold">Role:</span> {oldRoleName} → {newRoleName}
+                </div>
+              </div>
+              
+              {/* Timestamp */}
+              <span className="ml-6 text-xs text-gray-400 mt-1">
+                {formatDateTime(item.event_time)}
+              </span>
+            </div>
+          </div>
+        );
+      }
+    }
+    
+    // Check for special descriptive events (like assignments) that have a description but no changes
+    const isDescriptiveEvent = !item.changes && item.description && 
+      (item.description.includes("assigned") || 
+       item.description.includes("removed") || 
+       item.description.includes("joined"));
+       
+    if (isDescriptiveEvent) {
+      // Handle "joined the platform" events
+      if (item.description.includes("joined the platform")) {
+        return (
+          <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+            <div className="flex flex-col">
+              <span className="flex items-center gap-1">
+                <Users className="w-4 h-4 text-blue-500" />
+                <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                  {actorName}
+                </Link>
+                <span>joined the platform</span>
+              </span>
+              <span className="ml-6 text-xs text-gray-400 mt-1">
+                {formatDateTime(item.event_time)}
+              </span>
+            </div>
+          </div>
+        );
+      }
+      
+      // Handle assignment events by parsing the description
+      if (item.description && item.description.includes("assigned")) {
+        // Try to extract the customer name and role from the description
+        const parts = item.description.split(" to ");
+        if (parts.length === 2) {
+          let customerName = parts[1] || "";
+          let roleInfo = "";  // Initialize as empty string instead of null
+          
+          // Extract role information if available - improve role extraction
+          // Check for "as" pattern in customer name (e.g., "Company as Developer")
+          const asIndex = customerName.indexOf(" as ");
+          if (asIndex > -1) {
+            roleInfo = customerName.substring(asIndex + 4).trim();
+            customerName = customerName.substring(0, asIndex).trim();
+          } 
+          
+          // If not found in customer name, check entire description
+          if (!roleInfo) {
+            const fullAsMatch = item.description.match(/\bas\s+([^\s]+(?:\s+[^\s]+)*)\b/i);
+            if (fullAsMatch && fullAsMatch[1]) {
+              roleInfo = fullAsMatch[1].trim();
+            }
+          }
+          
+          // Check for role_id in metadata (added in our update)
+          if (!roleInfo && item.metadata && item.metadata.role_id) {
+            const roleId = Number(item.metadata.role_id);
+            roleInfo = getRoleNameById(roleId);
+          }
+          
+          // If still no role, check directly in the item fields
+          if (!roleInfo && item.changes && item.changes.length > 0) {
+            const roleChange = item.changes.find(c => 
+              c.field === 'role' || 
+              c.field === 'role_id' ||
+              c.field === 'position' || 
+              c.field === 'job_title'
+            );
+            if (roleChange) {
+              // If it's a role_id, try to get the name
+              if (roleChange.field === 'role_id' && typeof roleChange.newValue === 'number') {
+                roleInfo = getRoleNameById(roleChange.newValue);
+              } else {
+                roleInfo = String(roleChange.newValue || '');
+              }
+            }
+          }
+          
+          // Last resort: Check for any metadata JSON
+          if (!roleInfo && item.metadata) {
+            try {
+              const metadata = typeof item.metadata === 'string' 
+                ? JSON.parse(item.metadata) 
+                : item.metadata;
+              
+              if (metadata.role) {
+                roleInfo = metadata.role;
+              } else if (metadata.position) {
+                roleInfo = metadata.position;
+              } else if (metadata.job_title) {
+                roleInfo = metadata.job_title;
+              } else if (metadata.role_id) {
+                // If we have a role_id, look up the name
+                const roleId = Number(metadata.role_id);
+                roleInfo = getRoleNameById(roleId);
+              }
+            } catch (e) {
+              // If JSON parsing fails, use default
+              roleInfo = "Unknown Role";
+            }
+          }
+          
+          // Find the customer by name to get its ID for linking
+          const customer = customers.find(c => c.name === customerName);
+          const customerLink = customer ? `/customers/${customer.id}` : '#';
+          
+          return (
+            <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+              <div className="flex flex-col">
+                <span className="flex items-center gap-1">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                    {actorName}
+                  </Link>
+                  <span>assigned</span>
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                    {actorName}
+                  </Link>
+                  <span>to</span>
+                  <Building className="w-4 h-4 text-green-500" />
+                  <Link to={customerLink} className="text-green-500 hover:underline font-medium">
+                    {customerName}
+                  </Link>
+                </span>
+                
+                {/* Always show role section - if not found, show placeholder */}
+                <div className="ml-6 mt-1 text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                  <div className="text-gray-700 dark:text-gray-300">
+                    <span className="font-semibold">Role:</span> {roleInfo || "No role specified"}
+                  </div>
+                </div>
+                
+                <span className="ml-6 text-xs text-gray-400 mt-1">
+                  {formatDateTime(item.event_time)}
+                </span>
+              </div>
+            </div>
+          );
+        }
+      }
+      
+      // For any other descriptive events we don't have specific handling for
+      // If it's a skill-related descriptive event, try to extract the skill name and create a link
+      if (item.description && (item.description.toLowerCase().includes("skill") || 
+                               item.description.toLowerCase().includes("added skill") || 
+                               item.description.toLowerCase().includes("removed skill"))) {
+        
+        // Extract skill name from description
+        let skillName = '';
+        const skillPatterns = [
+          /skill (['"])(.*?)\1/i,                 // skill "Name" or skill 'Name'
+          /skill ([\w\s]+?)(?:\s|$|\s+from\s+|$)/i,  // skill Name or skill Name from
+          /added skill (['"])(.*?)\1/i,           // added skill "Name" or added skill 'Name'
+          /added skill ([\w\s]+?)(?:\s|$|\s+from\s+)/i, // added skill Name or added skill Name from
+          /removed skill (['"])(.*?)\1/i,         // removed skill "Name" or removed skill 'Name'
+          /removed skill ([\w\s]+?)(?:\s|$|\s+as\s+)/i // removed skill Name or removed skill Name as Level
+        ];
+        
+        // Try each pattern until we find a match for the skill name
+        for (const pattern of skillPatterns) {
+          const match = item.description.match(pattern);
+          if (match) {
+            // For patterns with quotes, use group 2, otherwise group 1
+            skillName = pattern.toString().includes("(['\"])") ? 
+              (match[2] || '') : (match[1] || '');
+            if (skillName) break;
+          }
+        }
+        
+        if (skillName) {
+          // Find skill ID to create a link
+          const skillId = findSkillIdByName(skillName);
+          const skillLink = skillId ? `/skills/${skillId}` : '#';
+          
+          // Replace the skill name in the description with a link
+          const beforeSkill = item.description.split(skillName)[0];
+          const afterSkill = item.description.split(skillName).slice(1).join(skillName);
+          
+          return (
+            <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+              <div className="flex flex-col">
+                <span className="flex items-center gap-1">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                    {actorName}
+                  </Link>
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {beforeSkill}
+                  </span>
+                  <Link to={skillLink} className="text-purple-500 hover:underline font-medium">
+                    {skillName}
+                  </Link>
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {afterSkill}
+                  </span>
+                </span>
+                <span className="ml-6 text-xs text-gray-400 mt-1">
+                  {formatDateTime(item.event_time)}
+                </span>
+              </div>
+            </div>
+          );
+        }
+      }
+      
+      // For any other descriptive events without skill names
+      return (
+        <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+          <div className="flex flex-col">
+            <span className="flex items-center gap-1">
+              <Users className="w-4 h-4 text-blue-500" />
+              <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                {actorName}
+              </Link>
+              <span className="text-gray-700 dark:text-gray-300">
+                {item.description.replace(actorName, '')}
+              </span>
+            </span>
+            <span className="ml-6 text-xs text-gray-400 mt-1">
+              {formatDateTime(item.event_time)}
+            </span>
+          </div>
+        </div>
+      );
+    }
+    
     // Format all changes in a consistent way to show as subtext
     const formattedChanges = item.changes?.map(change => {
       // Helper function to format any value consistently
       const formatValue = (value: any): string => {
-        if (value === null || value === undefined) {
-          return 'None';
-        }
+        if (value === null || value === undefined) return 'empty';
         
-        if (typeof value === 'boolean') {
-          return value ? 'Yes' : 'No';
-        }
-        
-        if (typeof value === 'object') {
+        // Handle objects with name property (like categories, industries)
+        if (typeof value === 'object' && value !== null) {
+          // If it has a name property, just use that
+          if (value.name) return value.name;
+          
+          // Try to parse JSON strings that might contain objects with names
+          if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+            try {
+              const parsed = JSON.parse(value);
+              if (parsed && parsed.name) {
+                return parsed.name;
+              }
+            } catch {
+              // If parsing fails, continue with regular handling
+            }
+          }
+          
+          // For other objects, try to stringify but avoid showing full JSON
           try {
-            // Try to extract the name field for common entities
-            if (value && value.name) {
-              return value.name;
-            }
-            
-            // If there's no name field but it has an id and other fields, it's likely an entity
-            if (value && value.id && Object.keys(value).length > 1) {
-              if (value.full_name) return value.full_name;
-              if (value.email) return value.email;
-              if (value.title) return value.title;
-              if (value.description) return value.description;
-            }
-            
-            // If it's an empty object, return None
-            if (value && Object.keys(value).length === 0) {
-              return 'None';
-            }
-            
-            // Last resort - stringify the object but limit its length
-            const stringified = JSON.stringify(value);
-            if (stringified.length > 50) {
-              return stringified.substring(0, 47) + '...';
-            }
-            return stringified;
-          } catch (e) {
-            return String(value);
+            // Simple representation for objects
+            return 'object';
+          } catch {
+            return 'complex value';
           }
         }
         
-        return String(value);
+        // Handle strings, numbers, and other primitives
+        const stringValue = String(value);
+        if (stringValue.length > 30) {
+          return stringValue.substring(0, 30) + '...';
+        }
+        return stringValue;
       };
-      
-      // Format field names to be more readable
+
+      // Format field name for display
       const formatFieldName = (field: string) => {
-        // Replace underscores with spaces and capitalize each word
-        return field
-          .replace(/_/g, ' ')
-          .replace(/\b\w/g, l => l.toUpperCase());
+        return field.replace(/_/g, ' ').toLowerCase();
       };
       
-      // Special handling for categories, industries and any object-type field
-      if (typeof change.newValue === 'object' || typeof change.oldValue === 'object') {
-        const fieldName = formatFieldName(change.field);
-        
-        // Extract name properties or use formatted values
-        const oldVal = typeof change.oldValue === 'object' && change.oldValue?.name ? 
-          change.oldValue.name : formatValue(change.oldValue);
+      // Handle role_id changes specially
+      if (change.field === 'role_id') {
+        const oldRoleName = getRoleNameById(change.oldValue) || 'No Role';
+        const newRoleName = getRoleNameById(change.newValue) || 'No Role';
+        return `role: ${oldRoleName} → ${newRoleName}`;
+      }
+      
+      // Specially handle category and industry fields
+      if (change.field === 'category' || change.field === 'industry') {
+        const extractName = (val: any): string => {
+          if (!val) return 'empty';
           
-        const newVal = typeof change.newValue === 'object' && change.newValue?.name ? 
-          change.newValue.name : formatValue(change.newValue);
+          // Direct name property access
+          if (typeof val === 'object' && val.name) {
+            return val.name;
+          }
+          
+          // Try parsing string JSON
+          if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+            try {
+              const parsed = JSON.parse(val);
+              if (parsed && parsed.name) {
+                return parsed.name;
+              }
+            } catch {
+              // Fall through to default handling
+            }
+          }
+          
+          // For simple values
+          return String(val);
+        };
         
-        return `${fieldName}: ${oldVal} → ${newVal}`;
+        const oldName = extractName(change.oldValue);
+        const newName = extractName(change.newValue);
+        
+        if (oldName === newName) return null;
+        return `${formatFieldName(change.field)}: ${oldName} → ${newName}`;
       }
       
-      // Skip any field containing "id" in its name
-      if (change.field.toLowerCase().includes('id')) {
-        return '';
+      // Skip category_id and industry_id fields as we'll show the names only
+      if (change.field === 'category_id' || change.field === 'industry_id') {
+        // Check if we have a corresponding category/industry change
+        const hasNameField = item.changes?.some(c => 
+          (c.field === 'category' && change.field === 'category_id') ||
+          (c.field === 'industry' && change.field === 'industry_id')
+        );
+        
+        // Skip this field if we have the name change
+        if (hasNameField) return null;
+        
+        // Otherwise format nicely
+        const fieldName = change.field === 'category_id' ? 'category' : 'industry';
+        const oldValue = formatValue(change.oldValue);
+        const newValue = formatValue(change.newValue);
+        
+        if (oldValue === newValue) return null;
+        return `${formatFieldName(fieldName)}: ${oldValue} → ${newValue}`;
       }
       
-      return `${formatFieldName(change.field)}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}`;
+      // Get formatted values for other fields
+      const oldValue = formatValue(change.oldValue);
+      const newValue = formatValue(change.newValue);
+      
+      // Skip if no actual difference for non-description fields
+      if (oldValue === newValue && change.field !== 'description') return null;
+      
+      // Simple format showing only field name and old/new values
+      return `${formatFieldName(change.field)}: ${oldValue} → ${newValue}`;
     }).filter(Boolean); // Remove null entries
     
     // Handle skill-related events specially after formattedChanges is declared
@@ -1376,30 +1758,37 @@ export function Timeline({
           // If entity name differs from ID, use that (could be a resolved name)
           skillName = entityName;
         } else {
-          // Look up the skill from skill data using either entity_id or by searching changes
-          for (const skill of skills) {
-            if (String(skill.id) === item.entity_id) {
-              skillName = skill.name;
-              break;
+          // Last resort - use a default or try to find the skill by linking to another table
+          // Look for a related skill in the skills data
+          const skillEntity = skills.find(s => String(s.id) === item.entity_id);
+          if (skillEntity) {
+            skillName = skillEntity.name;
+          } else {
+            // Look up the skill from skill data using either entity_id or by searching changes
+            for (const skill of skills) {
+              if (String(skill.id) === item.entity_id) {
+                skillName = skill.name;
+                break;
+              }
             }
-          }
-          
-          // If still no skill name, try to find it in any related data
-          if (!skillName && item.changes) {
-            for (const change of item.changes) {
-              if (change.field === 'skill_id') {
-                const relatedSkill = skills.find(s => String(s.id) === String(change.newValue || change.oldValue));
-                if (relatedSkill) {
-                  skillName = relatedSkill.name;
-                  break;
+            
+            // If still no skill name, try to find it in any related data
+            if (!skillName && item.changes) {
+              for (const change of item.changes) {
+                if (change.field === 'skill_id') {
+                  const relatedSkill = skills.find(s => String(s.id) === String(change.newValue || change.oldValue));
+                  if (relatedSkill) {
+                    skillName = relatedSkill.name;
+                    break;
+                  }
                 }
               }
             }
-          }
-          
-          // Use a default if still not found
-          if (!skillName) {
-            skillName = 'Skill';  // Default fallback
+            
+            // Use a default if still not found
+            if (!skillName) {
+              skillName = 'Skill';  // Default fallback
+            }
           }
         }
       }
@@ -1527,11 +1916,11 @@ export function Timeline({
                 </Link>
               </span>
               
-              {/* Show skill level as subtext only if it has a value */}
-              {skillLevel && (
+              {/* Show skill level as subtext if available */}
+              {(skillLevel || action === 'added') && (
                 <div className="ml-6 mt-1 text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                   <div className="text-gray-700 dark:text-gray-300">
-                    <span className="font-semibold">Proficiency:</span> {skillLevel}
+                    <span className="font-semibold">Proficiency:</span> {skillLevel || ''}
                   </div>
                 </div>
               )}
@@ -1560,11 +1949,11 @@ export function Timeline({
               </Link>
             </span>
             
-            {/* Show skill level as subtext only if it has a value */}
-            {skillLevel && (
+            {/* Show skill level as subtext if available */}
+            {(skillLevel || action === 'added') && (
               <div className="ml-6 mt-1 text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                 <div className="text-gray-700 dark:text-gray-300">
-                  <span className="font-semibold">Proficiency:</span> {skillLevel}
+                  <span className="font-semibold">Proficiency:</span> {skillLevel || ''}
                 </div>
               </div>
             )}
@@ -1636,20 +2025,11 @@ export function Timeline({
           {/* Subtext showing all changes */}
           {formattedChanges && formattedChanges.length > 0 && (
             <div className="ml-6 mt-1 text-sm p-2">
-              {formattedChanges
-                .filter(change => 
-                  // Filter out ANY fields containing 'id' in any form
-                  change && 
-                  !change.toLowerCase().includes('id:') &&
-                  !change.toLowerCase().includes(' id ') &&
-                  !change.toLowerCase().match(/\b(id|_id)\b/i)
-                )
-                .map((change, index) => (
-                  <div key={index} className="text-gray-500 dark:text-gray-400">
-                    {change}
-                  </div>
-                ))
-              }
+              {formattedChanges.map((change, index) => (
+                <div key={index} className="text-gray-500 dark:text-gray-400">
+                  {change}
+                </div>
+              ))}
             </div>
           )}
           
