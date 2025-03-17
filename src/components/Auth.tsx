@@ -10,18 +10,15 @@ export function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
 
-  const createProfile = async (userId: string, email: string, metadata?: { first_name?: string, last_name?: string }) => {
+  const createProfile = async (userId: string, email: string, metadata?: { full_name?: string }) => {
     try {
-      const profileData = {
-        id: userId,
-        email,
-        first_name: metadata?.first_name || email.split('@')[0], // Use email username as initial first name if not provided
-        last_name: metadata?.last_name || '' // Empty last name if not provided
-      };
-      
       const { error } = await supabase
         .from('profiles')
-        .insert([profileData]);
+        .insert([{
+          id: userId,
+          email,
+          full_name: metadata?.full_name
+        }]);
 
       if (error) {
         console.error('Error creating profile:', error);
@@ -68,8 +65,7 @@ export function Auth() {
           options: {
             emailRedirectTo: window.location.origin,
             data: {
-              first_name: email.split('@')[0], // Use email username as initial first name
-              last_name: ''
+              full_name: email.split('@')[0] // Use email username as initial full name
             }
           }
         });

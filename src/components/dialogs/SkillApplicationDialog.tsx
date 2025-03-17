@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { DialogContent, DialogHeader, DialogTitle, Button, Input, Label, Select, Textarea } from '../ui';
+import { DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Select } from '../ui/select';
+import { Textarea } from '../ui/textarea';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { createSkillApplication, updateSkillApplication, deleteSkillApplication } from '../../lib/api';
-import { SkillApplication } from '../../types';
+import { SkillApplication, Skill, Customer } from '../../types';
 import { GraduationCap, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-
-// Define simple versions of types for the form
-interface SimpleSkill {
-  id: number;
-  name: string;
-}
-
-interface SimpleCustomer {
-  id: number;
-  name: string;
-}
 
 // Define the form schema
 const formSchema = z.object({
@@ -34,7 +28,7 @@ type FormValues = z.infer<typeof formSchema>;
 type SkillApplicationDialogProps = {
   userId: string;
   existingApplication?: SkillApplication | null;
-  onClose: () => void;
+  onClose: (refreshNeeded?: boolean) => void;
 };
 
 const PROFICIENCY_LEVELS = [
@@ -52,9 +46,9 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SimpleSkill[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [isLoadingSkills, setIsLoadingSkills] = useState(true);
-  const [customers, setCustomers] = useState<SimpleCustomer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
 
   // Fetch skills and customers on component mount
@@ -71,7 +65,7 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
           .order('name');
         
         if (skillsError) throw skillsError;
-        setSkills(skillsData as SimpleSkill[] || []);
+        setSkills(skillsData || []);
         
         // Fetch customers
         const { data: customersData, error: customersError } = await supabase
@@ -80,7 +74,7 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
           .order('name');
         
         if (customersError) throw customersError;
-        setCustomers(customersData as SimpleCustomer[] || []);
+        setCustomers(customersData || []);
       } catch (err) {
         console.error('Error fetching data:', err);
         setError('Failed to load skills or customers. Please try again.');
@@ -141,7 +135,7 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
         });
       }
       
-      onClose();
+      onClose(true); // Refresh needed
     } catch (err) {
       console.error('Error saving skill application:', err);
       setError('Failed to save the skill application. Please try again.');
@@ -160,7 +154,7 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
     
     try {
       await deleteSkillApplication(existingApplication.id);
-      onClose();
+      onClose(true); // Refresh needed
     } catch (err) {
       console.error('Error deleting skill application:', err);
       setError('Failed to delete the skill application. Please try again.');
@@ -314,7 +308,6 @@ const SkillApplicationDialog: React.FC<SkillApplicationDialogProps> = ({
             
             <Button
               type="submit"
-              variant="primary"
               disabled={isLoading}
             >
               {isLoading ? 'Saving...' : existingApplication ? 'Update' : 'Apply Skill'}

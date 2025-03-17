@@ -836,7 +836,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, first_name, last_name, email'
+      select: 'id, full_name, email'
     }
   );
 
@@ -860,7 +860,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, first_name, last_name, email'
+      select: 'id, full_name, email'
     }
   );
 
@@ -875,7 +875,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, first_name, last_name, email'
+      select: 'id, full_name, email'
     }
   );
   

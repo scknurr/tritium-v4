@@ -56,14 +56,11 @@ async function createAuditLog(
       // Get the entity name for a more descriptive message
       const { data: entityData } = await supabase
         .from(table!)
-        .select('name, first_name, last_name, email')
+        .select('name, full_name')
         .eq('id', entityId)
         .single();
       
-      const entityName = entityData?.name || 
-        (entityData?.first_name || entityData?.last_name ? 
-          `${entityData?.first_name || ''} ${entityData?.last_name || ''}`.trim() : 
-          entityData?.email || entityId);
+      const entityName = entityData?.name || entityData?.full_name || entityId;
       description = `Created ${entityName}`;
     } else if (eventType === EVENT_TYPES.DELETE) {
       description = `Deleted ${table} ${entityId}`;

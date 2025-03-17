@@ -1,83 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GridView } from './GridView';
-import { DetailCard } from './DetailCard';
-import { EntityDetailItem } from './EntityDetailItem';
+import { EntityCard } from './EntityCard';
 import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
 import { queryKeys } from '../../lib/queryKeys';
 import type { Customer, Profile, Skill } from '../../types';
-import { Users, Building, GraduationCap, Star, Briefcase, Gauge, Eye, Pencil, Mail, Globe, Folder } from 'lucide-react';
-import { EntityLink } from './EntityLink';
-import { Button } from 'flowbite-react';
-import { formatFullName } from '../../lib/utils';
-
-// Define interfaces for the relationship data
-interface UserCustomerRelation {
-  id: number;
-  user_id: string;
-  customer_id: number;
-  role_id: number | null;
-  user: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-  }
-  customer: {
-    id: number;
-    name: string;
-  }
-}
-
-interface UserSkillRelation {
-  id: number;
-  user_id: string;
-  skill_id: number;
-  proficiency_level: string;
-  user: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-  }
-  skill: {
-    id: number;
-    name: string;
-  }
-}
-
-interface CustomerSkillRelation {
-  id: number;
-  customer_id: number;
-  skill_id: number;
-  utilization_level: string;
-  customer?: {
-    id: number;
-    name: string;
-  };
-  skill?: {
-    id: number;
-    name: string;
-  };
-}
-
-// Define a type for relationship items
-interface RelationshipItem {
-  title: string;
-  icon: React.ComponentType<any>;
-  color: string;
-  name: string;
-  id?: string | number;
-  entityType?: 'user' | 'customer' | 'skill' | 'application' | 'role';
-  level?: string;
-}
+import { Users, Building, GraduationCap, Star, Briefcase, Gauge } from 'lucide-react';
 
 interface EntityGridProps<T> {
   data: T[];
   loading: boolean;
   error: string | null;
   onEdit?: (entity: T) => void;
-  onView?: (entity: T) => void;
   type: 'user' | 'customer' | 'skill';
 }
 
@@ -86,29 +20,28 @@ export function EntityGrid<T extends Profile | Customer | Skill>({
   loading, 
   error, 
   onEdit,
-  onView,
   type 
 }: EntityGridProps<T>) {
   const navigate = useNavigate();
 
-  // Fetch relationships and related entities with proper typing
-  const { data: userCustomers = [] } = useQueryWithCache<UserCustomerRelation[]>(
+  // Fetch relationships and related entities
+  const { data: userCustomers = [] } = useQueryWithCache(
     queryKeys.profiles.customers('all'),
     'user_customers',
     {
-      select: '*, user:profiles(id, first_name, last_name, email), customer:customers(id, name)'
+      select: '*, user:profiles(id, full_name, email), customer:customers(id, name)'
     }
   );
 
-  const { data: userSkills = [] } = useQueryWithCache<UserSkillRelation[]>(
+  const { data: userSkills = [] } = useQueryWithCache(
     queryKeys.profiles.skills('all'),
     'user_skills',
     {
-      select: '*, user:profiles(id, first_name, last_name, email), skill:skills(id, name), proficiency_level'
+      select: '*, user:profiles(id, full_name, email), skill:skills(id, name), proficiency_level'
     }
   );
 
-  const { data: customerSkills = [] } = useQueryWithCache<CustomerSkillRelation[]>(
+  const { data: customerSkills = [] } = useQueryWithCache(
     queryKeys.customers.skills('all'),
     'customer_skills',
     {
@@ -116,19 +49,39 @@ export function EntityGrid<T extends Profile | Customer | Skill>({
     }
   );
 
-  const getTitle = (entity: T) => {
-    if ('first_name' in entity && 'last_name' in entity) {
-      return formatFullName(entity.first_name, entity.last_name, entity.email);
+  const getIcon = () => {
+    switch (type) {
+      case 'user':
+        return Users;
+      case 'customer':
+        return Building;
+      case 'skill':
+        return GraduationCap;
     }
+  };
+
+  const getIconColor = () => {
+    switch (type) {
+      case 'user':
+        return 'text-blue-500';
+      case 'customer':
+        return 'text-green-500';
+      case 'skill':
+        return 'text-purple-500';
+    }
+  };
+
+  const getTitle = (entity: T) => {
+    if ('full_name' in entity) return entity.full_name || entity.email;
     if ('name' in entity) return entity.name;
     return 'Unknown';
   };
 
-  const getSubtitle = (entity: T): string | undefined => {
+  const getSubtitle = (entity: T) => {
     if ('email' in entity) return entity.email;
-    if ('website' in entity) return entity.website || undefined;
+    if ('website' in entity) return entity.website || 'No website';
     if ('category' in entity && entity.category) return `Category: ${entity.category.name}`;
-    return undefined;
+    return null;
   };
 
   const getDescription = (entity: T) => {
@@ -147,28 +100,22 @@ export function EntityGrid<T extends Profile | Customer | Skill>({
       
       switch (type) {
         case 'user': {
-          // Filter user-customer relationships
-          const customerAssignments: RelationshipItem[] = (userCustomers || [])
+          const customerAssignments = userCustomers
             .filter(uc => uc.user_id === id)
             .map(uc => ({
               title: 'Customer',
               icon: Building,
               color: 'text-green-500',
-              name: uc.customer?.name || 'Unknown Customer',
-              id: uc.customer?.id,
-              entityType: 'customer'
+              name: uc.customer?.name || 'Unknown Customer'
             }));
 
-          // Filter user-skill relationships
-          const skillProficiencies: RelationshipItem[] = (userSkills || [])
+          const skillProficiencies = userSkills
             .filter(us => us.user_id === id)
             .map(us => ({
               title: 'Skill',
               icon: us.proficiency_level === 'expert' ? Star : GraduationCap,
               color: us.proficiency_level === 'expert' ? 'text-yellow-500' : 'text-purple-500',
               name: us.skill?.name || 'Unknown Skill',
-              id: us.skill?.id,
-              entityType: 'skill',
               level: us.proficiency_level
             }));
 
@@ -187,28 +134,22 @@ export function EntityGrid<T extends Profile | Customer | Skill>({
         }
 
         case 'customer': {
-          // Filter customer team members
-          const teamMembers: RelationshipItem[] = (userCustomers || [])
-            .filter(uc => uc.customer_id === Number(id))
+          const teamMembers = userCustomers
+            .filter(uc => uc.customer_id === id)
             .map(uc => ({
               title: 'Team Member',
               icon: Users,
               color: 'text-blue-500',
-              name: formatFullName(uc.user?.first_name, uc.user?.last_name, uc.user?.email) || 'Unknown User',
-              id: uc.user?.id,
-              entityType: 'user'
+              name: uc.user?.full_name || uc.user?.email || 'Unknown User'
             }));
 
-          // Filter customer required skills
-          const requiredSkills: RelationshipItem[] = (customerSkills || [])
-            .filter(cs => cs.customer_id === Number(id))
+          const requiredSkills = customerSkills
+            .filter(cs => cs.customer_id === id)
             .map(cs => ({
               title: 'Required Skill',
               icon: cs.utilization_level === 'critical' ? Gauge : GraduationCap,
               color: cs.utilization_level === 'critical' ? 'text-red-500' : 'text-purple-500',
               name: cs.skill?.name || 'Unknown Skill',
-              id: cs.skill?.id,
-              entityType: 'skill',
               level: cs.utilization_level
             }));
 
@@ -227,212 +168,121 @@ export function EntityGrid<T extends Profile | Customer | Skill>({
         }
 
         case 'skill': {
-          // Filter users with this skill
-          const skilledUsers: RelationshipItem[] = (userSkills || [])
-            .filter(us => us.skill_id === Number(id))
+          const skilledUsers = userSkills
+            .filter(us => us.skill_id === id)
             .map(us => ({
               title: 'User',
               icon: us.proficiency_level === 'expert' ? Star : Users,
               color: us.proficiency_level === 'expert' ? 'text-yellow-500' : 'text-blue-500',
-              name: formatFullName(us.user?.first_name, us.user?.last_name, us.user?.email) || 'Unknown User',
-              id: us.user?.id,
-              entityType: 'user',
+              name: us.user?.full_name || us.user?.email || 'Unknown User',
               level: us.proficiency_level
             }));
 
-          // Filter customers needing this skill
-          const customersNeeding: RelationshipItem[] = (customerSkills || [])
-            .filter(cs => cs.skill_id === Number(id))
+          const customerApplications = customerSkills
+            .filter(cs => cs.skill_id === id)
             .map(cs => ({
               title: 'Customer',
-              icon: cs.utilization_level === 'critical' ? Gauge : Building,
+              icon: cs.utilization_level === 'critical' ? Briefcase : Building,
               color: cs.utilization_level === 'critical' ? 'text-red-500' : 'text-green-500',
               name: cs.customer?.name || 'Unknown Customer',
-              id: cs.customer?.id,
-              entityType: 'customer',
               level: cs.utilization_level
             }));
 
           return {
             sections: [
               {
-                title: 'Users with this Skill',
+                title: 'Users',
                 items: skilledUsers
               },
               {
-                title: 'Customers Requiring this Skill',
-                items: customersNeeding
+                title: 'Customer Applications',
+                items: customerApplications
               }
             ]
           };
         }
       }
     }
-    
-    return {
-      sections: []
-    };
+    return { sections: [] };
   };
 
   const getStatus = (entity: T) => {
-    if ('status' in entity && entity.status) {
-      return {
-        value: entity.status,
-        color: entity.status === 'active' ? 'green' : 'gray'
-      };
-    }
-    return undefined;
+    if ('status' in entity) return entity.status;
+    return null;
   };
 
-  const getImageUrl = (entity: T) => {
-    if ('avatar_url' in entity) return entity.avatar_url;
-    if ('logo_url' in entity) return entity.logo_url;
-    if ('svg_icon' in entity) return entity.svg_icon;
-    return undefined;
-  };
-
-  const handleEntityClick = (entity: T) => {
-    if (onView) {
-      onView(entity);
-    } else if ('id' in entity) {
-      // Navigate to the detail page if no onView handler is provided
-      switch (type) {
-        case 'user':
-          navigate(`/users/${entity.id}`);
-          break;
-        case 'customer':
-          navigate(`/customers/${entity.id}`);
-          break;
-        case 'skill':
-          navigate(`/skills/${entity.id}`);
-          break;
-      }
+  const handleCardClick = (entity: T) => {
+    const id = 'id' in entity ? entity.id : '';
+    switch (type) {
+      case 'user':
+        navigate(`/users/${id}`);
+        break;
+      case 'customer':
+        navigate(`/customers/${id}`);
+        break;
+      case 'skill':
+        navigate(`/skills/${id}`);
+        break;
     }
   };
-
-  if (error) {
-    return <div className="p-4 text-red-600">{error}</div>;
-  }
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[...Array(6)].map((_, index) => (
-          <DetailCard
-            key={index}
-            title=""
-            entityType={type}
-            isLoading={true}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (!data.length) {
-    return (
-      <div className="p-6 text-center text-gray-500">
-        No {type}s found. Try adjusting your filter or adding a new {type}.
-      </div>
-    );
-  }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {data.map((entity, index) => {
-        if (!('id' in entity)) return null;
-        
-        // Get relationship data
-        const relationshipData = getRelationshipDetails(entity);
-        
-        // Combine sections from different relationships
-        const allRelationships: RelationshipItem[] = relationshipData.sections.flatMap(
-          section => section.items.slice(0, 3)
-        ).slice(0, 3); // Limit to 3 total relationships for space
-        
-        return (
-          <DetailCard
-            key={`${type}-${index}-${entity.id}`}
-            title={getTitle(entity)}
-            entityType={type}
-            actions={[
-              { 
-                label: "View", 
-                icon: Eye, 
-                variant: "outline",
-                onClick: () => handleEntityClick(entity)
-              },
-              ...(onEdit ? [{ 
-                label: "Edit", 
-                icon: Pencil, 
-                variant: "secondary",
-                onClick: () => onEdit(entity)
-              }] : [])
-            ]}
-          >
-            <div className="space-y-4">
-              {/* Description */}
-              {getDescription(entity) && (
-                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                  {getDescription(entity)}
-                </p>
-              )}
-              
-              {/* Subtitle/secondary info */}
-              {getSubtitle(entity) && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  {type === 'user' && <Mail className="h-4 w-4" />}
-                  {type === 'customer' && <Globe className="h-4 w-4" />}
-                  {type === 'skill' && <Folder className="h-4 w-4" />}
-                  <span>{getSubtitle(entity)}</span>
-                </div>
-              )}
-              
-              {/* Status if available */}
-              {getStatus(entity) && (
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    getStatus(entity)?.color === 'green' 
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
-                      : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300'
-                  }`}>
-                    {getStatus(entity)?.value.charAt(0).toUpperCase() + getStatus(entity)?.value.slice(1)}
-                  </span>
-                </div>
-              )}
-              
-              {/* Related Entities */}
-              {allRelationships.length > 0 && (
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-                  <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Related</h4>
-                  <div className="space-y-2">
-                    {allRelationships.map((item, i) => (
-                      item.id && item.entityType ? (
-                        <EntityDetailItem
-                          key={`relation-${i}-${item.id}`}
-                          id={item.id}
-                          name={item.name}
-                          type={item.entityType}
-                          status={item.level ? {
-                            value: item.level.charAt(0).toUpperCase() + item.level.slice(1),
-                            color: item.level === 'expert' || item.level === 'critical' ? 'yellow' : 'blue'
-                          } : undefined}
-                          className="py-1 px-2"
-                        />
-                      ) : (
-                        <div key={`relation-${i}`} className="flex items-center gap-2 text-sm">
+    <GridView loading={loading} error={error}>
+      {data.map((entity) => {
+        const { sections } = getRelationshipDetails(entity);
+        const description = (
+          <>
+            {getDescription(entity) && (
+              <div className="mb-4">
+                <p className="text-gray-600 dark:text-gray-400">{getDescription(entity)}</p>
+              </div>
+            )}
+            {sections.length > 0 && (
+              <div className="space-y-4">
+                {sections.map((section, sectionIndex) => (
+                  <div key={sectionIndex}>
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                      {section.title}
+                    </h3>
+                    <div className="space-y-2">
+                      {section.items.map((item, itemIndex) => (
+                        <div key={itemIndex} className="flex items-center gap-2">
                           <item.icon className={`h-4 w-4 ${item.color}`} />
-                          <span>{item.name}</span>
+                          <span className="text-gray-600 dark:text-gray-400 text-sm">
+                            {item.name}
+                            {item.level && ` (${item.level})`}
+                          </span>
                         </div>
-                      )
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </DetailCard>
+                ))}
+              </div>
+            )}
+          </>
+        );
+
+        return (
+          <div
+            key={'id' in entity ? entity.id : ''}
+            className="cursor-pointer"
+            onClick={() => handleCardClick(entity)}
+          >
+            <EntityCard
+              title={getTitle(entity)}
+              subtitle={getSubtitle(entity)}
+              description={description}
+              icon={getIcon()}
+              iconColor={getIconColor()}
+              status={getStatus(entity)}
+              onEdit={onEdit ? (e) => {
+                e.stopPropagation();
+                onEdit(entity);
+              } : undefined}
+            />
+          </div>
         );
       })}
-    </div>
+    </GridView>
   );
 }

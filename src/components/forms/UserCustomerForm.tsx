@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Modal, Button, Label, Select, TextInput } from 'flowbite-react';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
 import type { Profile, Customer } from '../../types';
-import { formatFullName } from '../../lib/utils';
 
 interface UserCustomerFormProps {
   userId?: string;
@@ -26,7 +25,7 @@ export function UserCustomerForm({ userId, customerId, isOpen, onClose, onSubmit
   const [error, setError] = useState<string | null>(null);
 
   const { data: users } = useSupabaseQuery<Profile>('profiles', {
-    orderBy: { column: 'first_name', ascending: true }
+    orderBy: { column: 'full_name', ascending: true }
   });
 
   const { data: customers } = useSupabaseQuery<Customer>('customers', {
@@ -55,18 +54,11 @@ export function UserCustomerForm({ userId, customerId, isOpen, onClose, onSubmit
       return;
     }
 
-    // Make sure we have valid values
-    if (!formData.user_id || !formData.customer_id || !formData.start_date) {
-      setError('Missing required fields');
-      return;
-    }
-
     setLoading(true);
     try {
       await onSubmit({
-        user_id: formData.user_id,
+        ...formData,
         customer_id: Number(formData.customer_id),
-        start_date: formData.start_date,
         end_date: formData.end_date || undefined
       });
       onClose();
@@ -101,7 +93,7 @@ export function UserCustomerForm({ userId, customerId, isOpen, onClose, onSubmit
                 <option value="">Select a user</option>
                 {users.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {formatFullName(user.first_name, user.last_name, user.email)}
+                    {user.full_name || user.email}
                   </option>
                 ))}
               </Select>

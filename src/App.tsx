@@ -11,7 +11,6 @@ import { UserDetail } from './pages/detail/UserDetail';
 import { CustomerDetail } from './pages/detail/CustomerDetail';
 import { SkillDetail } from './pages/detail/SkillDetail';
 import { TestPage } from './pages/TestPage';
-import UnifiedActivityPage from './pages/UnifiedActivity';
 import { supabase } from './lib/supabase';
 import { useDarkMode } from './hooks/useDarkMode';
 import type { User } from '@supabase/supabase-js';
@@ -62,7 +61,6 @@ function App() {
             <Route path="skills/:id" element={
               <SkillDetail />
             } />
-            <Route path="activity" element={<UnifiedActivityPage />} />
             <Route path="settings" element={<Settings />} />
             <Route path="debug" element={<TestPage />} />
             {/* Redirect invalid skill UUIDs to users */}

@@ -5,86 +5,52 @@ import { getUserSkillApplications, getCustomerSkillApplications } from '../lib/a
 import { SkillApplication } from '../types';
 import { selectUser } from '../redux/slices/authSlice';
 import { PageHeader } from '../components/ui/PageHeader';
-import { Button, Modal, Card } from 'flowbite-react';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/Tabs';
+import { Dialog } from '../components/ui/Dialog';
 import SkillApplicationDialog from '../components/dialogs/SkillApplicationDialog';
 import { formatDate } from '../utils/format';
 import { Timeline } from '../components/ui/Timeline';
-import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
-import { LoadingSpinner } from '../components/ui/LoadingSpinner';
-import { ErrorMessage } from '../components/ui/ErrorMessage';
-import { useApiRequest } from '../hooks/useApiRequest';
 
-type ViewType = 'list' | 'timeline';
-
-// Mock imports if they don't exist (temporary fix for linter errors)
-// In a real scenario, we'd need to ensure these modules exist
-const mockUser = { id: '1' };
-const mockSelector = <T,>(selector: any) => mockUser as T;
-
-const SkillApplicationsPage: React.FC = () => {
-  // Use a try/catch to handle potential missing dependencies
-  let user;
-  try {
-    user = useSelector(selectUser);
-  } catch (e) {
-    user = mockUser;
-  }
-
+const SkillApplicationsPage = () => {
+  const user = useSelector(selectUser);
+  const [applications, setApplications] = useState<SkillApplication[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<SkillApplication | null>(null);
-  const [view, setView] = useState<ViewType>('list');
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'list' | 'timeline'>('list');
 
-  // Use standardized API request hook
-  const {
-    state: { data: applications = [], isLoading, error: apiError },
-    execute: fetchData
-  } = useApiRequest<SkillApplication[]>(
-    // Define a function that handles conditional fetching based on context
-    async () => {
-      if (selectedCustomerId) {
-        return await getCustomerSkillApplications(selectedCustomerId);
-      } else if (user?.id) {
-        return await getUserSkillApplications(user.id);
-      }
-      return [];
-    },
-    { data: [], isLoading: true, error: null }
-  );
-
-  // Update error state when API error changes
-  useEffect(() => {
-    if (apiError) {
-      setError(apiError.message);
-    }
-  }, [apiError]);
-
-  // Set up real-time subscription using standardized pattern
-  useRealtimeSubscription({
-    table: 'skill_applications',
-    filter: selectedCustomerId
-      ? { customer_id: selectedCustomerId.toString() }
-      : user?.id ? { user_id: user.id.toString() } : undefined,
-    onUpdate: (payload) => {
-      console.log('[Debug] Received real-time update for skill applications:', payload);
-      fetchData();
-    },
-    debug: true
-  });
-
-  // Initial data fetch
   useEffect(() => {
     if (user?.id) {
-      fetchData();
+      fetchUserApplications();
     }
   }, [user]);
 
-  // Handle switching between customer and user views
-  const selectCustomer = async (customerId: number) => {
-    setSelectedCustomerId(customerId);
-    fetchData();
+  const fetchUserApplications = async () => {
+    setIsLoading(true);
+    try {
+      const data = await getUserSkillApplications(user.id);
+      setApplications(data || []);
+    } catch (error) {
+      console.error('Error fetching skill applications:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCustomerApplications = async (customerId: number) => {
+    setIsLoading(true);
+    try {
+      const data = await getCustomerSkillApplications(customerId);
+      setApplications(data || []);
+      setSelectedCustomerId(customerId);
+    } catch (error) {
+      console.error('Error fetching customer skill applications:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAddApplication = () => {
@@ -97,8 +63,15 @@ const SkillApplicationsPage: React.FC = () => {
     setIsAddDialogOpen(true);
   };
 
-  const handleDialogClose = () => {
+  const handleDialogClose = (refreshNeeded: boolean = false) => {
     setIsAddDialogOpen(false);
+    if (refreshNeeded) {
+      if (selectedCustomerId) {
+        fetchCustomerApplications(selectedCustomerId);
+      } else {
+        fetchUserApplications();
+      }
+    }
   };
 
   const renderProficiencyStars = (proficiency: string) => {
@@ -123,34 +96,22 @@ const SkillApplicationsPage: React.FC = () => {
     );
   };
 
-  // Create a safe, non-null version of the applications array
-  const safeApplications = applications || [];
-
   return (
     <div className="container mx-auto py-6">
-      <div className="flex justify-between items-center">
-        <PageHeader
-          title="Skill Applications"
-          count={safeApplications.length}
-          icon={GraduationCap}
-          iconColor="text-purple-500"
-          badgeColor="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
-          onAdd={handleAddApplication}
-        />
-      </div>
-
-      {error && (
-        <div className="mb-6">
-          <ErrorMessage 
-            message={error}
-            onRetry={fetchData}
-            onDismiss={() => setError(null)}
-          />
-        </div>
-      )}
+      <PageHeader
+        title="Skill Applications"
+        description="Apply and manage your skills at different customers"
+        icon={<GraduationCap className="h-6 w-6" />}
+        action={
+          <Button onClick={handleAddApplication}>
+            <Plus className="h-4 w-4 mr-2" />
+            Apply Skill
+          </Button>
+        }
+      />
 
       <div className="mt-6">
-        <Tabs defaultValue="list" onValueChange={(v: string) => setView(v as ViewType)}>
+        <Tabs defaultValue="list" onValueChange={(v) => setView(v as 'list' | 'timeline')}>
           <TabsList>
             <TabsTrigger value="list">List View</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -158,8 +119,10 @@ const SkillApplicationsPage: React.FC = () => {
           
           <TabsContent value="list">
             {isLoading ? (
-              <LoadingSpinner centered size="lg" text="Loading skill applications..." />
-            ) : safeApplications.length === 0 ? (
+              <div className="flex justify-center py-10">
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+              </div>
+            ) : applications.length === 0 ? (
               <Card className="p-6 text-center">
                 <div className="flex flex-col items-center justify-center py-6">
                   <Info className="h-12 w-12 text-gray-400 mb-4" />
@@ -167,19 +130,19 @@ const SkillApplicationsPage: React.FC = () => {
                   <p className="text-gray-500 mt-2">
                     Apply your skills at customers to showcase your expertise
                   </p>
-                  <Button className="mt-4" color="primary" size="md" onClick={handleAddApplication}>
+                  <Button className="mt-4" onClick={handleAddApplication}>
                     Apply Skill
                   </Button>
                 </div>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {safeApplications.map((app) => (
+                {applications.map((app) => (
                   <Card key={app.id} className="overflow-hidden">
                     <div className="p-4">
                       <div className="flex justify-between">
                         <h3 className="text-lg font-medium">{app.skill_name}</h3>
-                        <Button color="light" size="sm" onClick={() => handleEditApplication(app)}>
+                        <Button variant="ghost" size="sm" onClick={() => handleEditApplication(app)}>
                           Edit
                         </Button>
                       </div>
@@ -216,11 +179,11 @@ const SkillApplicationsPage: React.FC = () => {
               <div className="p-6">
                 <Timeline
                   title="Skill Application Activity"
-                  icon={GraduationCap}
+                  icon={<GraduationCap className="h-5 w-5" />}
                   loading={isLoading}
                   entityType="users"
                   entityId={user?.id}
-                  items={[]}
+                  tableFilter="skill_applications"
                 />
               </div>
             </Card>
@@ -228,18 +191,16 @@ const SkillApplicationsPage: React.FC = () => {
         </Tabs>
       </div>
 
-      <Modal
-        show={isAddDialogOpen}
-        onClose={() => handleDialogClose()}
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => !open && handleDialogClose()}
       >
-        <Modal.Body>
-          <SkillApplicationDialog
-            userId={user?.id}
-            existingApplication={selectedApplication}
-            onClose={handleDialogClose}
-          />
-        </Modal.Body>
-      </Modal>
+        <SkillApplicationDialog
+          userId={user?.id}
+          existingApplication={selectedApplication}
+          onClose={handleDialogClose}
+        />
+      </Dialog>
     </div>
   );
 };

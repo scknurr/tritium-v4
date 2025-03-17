@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Building, Pencil, Eye } from 'lucide-react';
+import { Building, Pencil } from 'lucide-react';
 import { Button } from 'flowbite-react';
 import { DataTable } from '../components/ui/DataTable';
 import { EntityGrid } from '../components/ui/EntityGrid';
@@ -15,7 +15,6 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { CUSTOMER_FILTERS } from '../lib/filters';
 import { queryKeys } from '../lib/queryKeys';
 import type { Customer } from '../types';
-import { useNavigate } from 'react-router-dom';
 
 const columnHelper = createColumnHelper<Customer>();
 
@@ -77,14 +76,9 @@ const columns = [
     id: 'actions',
     header: () => 'Actions',
     cell: (info) => (
-      <div className="flex gap-2">
-        <Button size="sm" onClick={() => info.table.options.meta?.onView?.(info.row.original)}>
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button size="sm" onClick={() => info.table.options.meta?.onEdit?.(info.row.original)}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-      </div>
+      <Button size="sm" onClick={() => info.table.options.meta?.onEdit(info.row.original)}>
+        <Pencil className="h-4 w-4" />
+      </Button>
     ),
   }),
 ];
@@ -94,7 +88,6 @@ export function Customers() {
   const [selectedCustomer, setSelectedCustomer] = useState<Partial<Customer>>({});
   const [view, setView] = useLocalStorage<'grid' | 'table'>('customers-view', 'table');
   const [filter, setFilter] = useLocalStorage('customers-filter', 'newest');
-  const navigate = useNavigate();
 
   const queryKey = queryKeys.customers.list(filter);
   
@@ -109,9 +102,7 @@ export function Customers() {
 
   useRealtimeSubscription({
     table: 'customers',
-    onUpdate: () => {
-      refetch();
-    }
+    onUpdate: refetch
   });
 
   const { create: createCustomer, update: updateCustomer } = useMutationWithCache<Customer>({
@@ -133,10 +124,6 @@ export function Customers() {
     setSelectedCustomer(customer);
     setIsFormOpen(true);
   };
-  
-  const handleViewCustomer = (customer: Customer) => {
-    navigate(`/customers/${customer.id}`);
-  };
 
   const handleSubmit = async (customerData: Partial<Customer>) => {
     if (customerData.id) {
@@ -147,7 +134,7 @@ export function Customers() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <PageHeader
           title="Customers"
@@ -177,7 +164,6 @@ export function Customers() {
             entityType="customers"
             meta={{
               onEdit: handleEditCustomer,
-              onView: handleViewCustomer
             }}
           />
         ) : (

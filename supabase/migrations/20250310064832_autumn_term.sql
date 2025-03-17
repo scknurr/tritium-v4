@@ -112,8 +112,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   entity_id INTEGER,
   user_id UUID REFERENCES public.profiles,
   description TEXT,
-  event_time TIMESTAMPTZ DEFAULT NOW(),
-  metadata JSONB
+  event_time TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Enable RLS on all tables

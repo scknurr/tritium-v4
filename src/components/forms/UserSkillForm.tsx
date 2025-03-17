@@ -3,7 +3,6 @@ import { Modal, Button, Label, Select } from 'flowbite-react';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
 import { PROFICIENCY_LEVELS } from '../../lib/constants';
 import type { Profile, Skill } from '../../types';
-import { formatFullName } from '../../lib/utils';
 
 interface UserSkillFormProps {
   userId?: string;
@@ -46,7 +45,7 @@ export function UserSkillForm({
   }, [editData, userId, skillId]);
 
   const { data: users } = useSupabaseQuery<Profile>('profiles', {
-    orderBy: { column: 'first_name', ascending: true }
+    orderBy: { column: 'full_name', ascending: true }
   });
 
   const { data: skills } = useSupabaseQuery<Skill>('skills', {
@@ -89,7 +88,7 @@ export function UserSkillForm({
                 <option value="">Select a user</option>
                 {users.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {formatFullName(user.first_name, user.last_name, user.email)}
+                    {user.full_name || user.email}
                   </option>
                 ))}
               </Select>

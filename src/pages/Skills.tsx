@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { GraduationCap, Pencil, Eye } from 'lucide-react';
+import { GraduationCap, Pencil } from 'lucide-react';
 import { Button } from 'flowbite-react';
 import { DataTable } from '../components/ui/DataTable';
 import { EntityGrid } from '../components/ui/EntityGrid';
@@ -15,7 +15,6 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SKILL_FILTERS } from '../lib/filters';
 import { queryKeys } from '../lib/queryKeys';
 import type { Skill } from '../types';
-import { useNavigate } from 'react-router-dom';
 
 const columnHelper = createColumnHelper<Skill>();
 
@@ -47,7 +46,7 @@ const columns = [
     id: 'actions',
     header: () => 'Actions',
     cell: (info) => (
-      <Button size="sm" onClick={() => info.table.options.meta?.onEdit?.(info.row.original)}>
+      <Button size="sm" onClick={() => info.table.options.meta?.onEdit(info.row.original)}>
         <Pencil className="h-4 w-4" />
       </Button>
     ),
@@ -59,7 +58,6 @@ export function Skills() {
   const [selectedSkill, setSelectedSkill] = useState<Partial<Skill>>({});
   const [view, setView] = useLocalStorage<'grid' | 'table'>('skills-view', 'table');
   const [filter, setFilter] = useLocalStorage('skills-filter', 'newest');
-  const navigate = useNavigate();
   
   const queryKey = queryKeys.skills.list(filter);
   
@@ -74,9 +72,7 @@ export function Skills() {
 
   useRealtimeSubscription({
     table: 'skills',
-    onUpdate: () => {
-      refetch();
-    }
+    onUpdate: refetch
   });
 
   const { create: createSkill, update: updateSkill } = useMutationWithCache<Skill>({
@@ -98,10 +94,6 @@ export function Skills() {
     setSelectedSkill(skill);
     setIsFormOpen(true);
   };
-  
-  const handleViewSkill = (skill: Skill) => {
-    navigate(`/skills/${skill.id}`);
-  };
 
   const handleSubmit = async (skillData: Partial<Skill>) => {
     if (skillData.id) {
@@ -112,7 +104,7 @@ export function Skills() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
         <PageHeader
           title="Skills"
@@ -140,7 +132,7 @@ export function Skills() {
           error={error?.message}
           entityType="skills"
           meta={{
-            onEdit: handleEditSkill
+            onEdit: handleEditSkill,
           }}
         />
       ) : (

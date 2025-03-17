@@ -1,76 +1,68 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Star, GraduationCap } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { GraduationCap, Users, Star, Calendar } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { CustomerSkillApplication } from '../types';
-import { ContentCard } from './ui/ContentCard';
-import { getCustomerSkillApplications } from '../lib/api';
-import { useRealtimeSubscription } from '../hooks/useRealtimeSubscription';
-import { LoadingSpinner } from './ui/LoadingSpinner';
-import { ErrorMessage } from './ui/ErrorMessage';
-import { useApiRequest } from '../hooks/useApiRequest';
-import { EntityLink } from './ui/EntityLink';
-
-/**
- * @file CustomerSkillApplicationsList.tsx
- * @description Displays skills applied at a specific customer
- * 
- * @dataSource skill_applications (direct Supabase query)
- * @dataSink None (read-only component)
- * @relatedComponents UnifiedTimeline (also shows skill applications)
- * @criticalNotes This component shows ONLY skills from skill_applications table,
- *                not from audit_logs like UnifiedTimeline does
- * 
- * @checkFile DEVELOPER_NOTES.md for known issues
- */
 
 type CustomerSkillApplicationsListProps = {
   customerId: number;
+  refreshTrigger?: number;
 };
 
-/**
- * @dataFlow This component fetches data from skill_applications using direct Supabase query
- * @dataConsistency This data should be consistent with UnifiedTimeline which shows similar data
- * @realtimeUpdate This component uses Supabase real-time subscriptions to auto-refresh when data changes
- * 
- * @CRITICAL_CHECK Ensure this data matches what appears in Timeline events
- * @example Test with http://localhost:5173/customers/1 to verify consistency
- */
 const CustomerSkillApplicationsList: React.FC<CustomerSkillApplicationsListProps> = ({
-  customerId
+  customerId,
+  refreshTrigger = 0
 }) => {
-  const [error, setError] = useState<string | null>(null);
-  
-  // Use standardized API request hook
-  const { 
-    state: { data: applications = [], isLoading, error: apiError },
-    execute: fetchApplications 
-  } = useApiRequest<CustomerSkillApplication[]>(
-    // Use arrow function without parameters since customerId is in closure
-    async () => await getCustomerSkillApplications(customerId),
-    { data: [], isLoading: true, error: null }
-  );
+  const [applications, setApplications] = useState<CustomerSkillApplication[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Set up real-time subscription to skill_applications table using standardized pattern
-  useRealtimeSubscription({
-    table: 'skill_applications',
-    filter: { customer_id: customerId.toString() }, // Ensure customer_id is a string for RT
-    onUpdate: (payload) => {
-      console.log(`[Debug] Received real-time update for customer ${customerId} skill applications:`, payload);
-      fetchApplications();
-    },
-    debug: true
-  });
-
-  // Initial data fetch
   useEffect(() => {
+    const fetchApplications = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch skill applications for this customer
+        const { data, error } = await supabase
+          .from('skill_applications')
+          .select(`
+            id, 
+            user_id, 
+            skill_id, 
+            customer_id, 
+            proficiency, 
+            start_date, 
+            end_date, 
+            notes, 
+            created_at,
+            updated_at,
+            skills:skill_id(name),
+            users:user_id(id, full_name, email)
+          `)
+          .eq('customer_id', customerId)
+          .is('end_date', null) // Only show active applications
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Format the data to include user and skill names
+        const formattedData = data?.map(app => ({
+          ...app,
+          skill_name: app.skills ? (app.skills as any).name : 'Unknown Skill',
+          user_name: app.users ? 
+            ((app.users as any).full_name || (app.users as any).email) : 
+            'Unknown User'
+        })) || [];
+        
+        setApplications(formattedData);
+      } catch (error) {
+        console.error('Error fetching customer skill applications:', error);
+        setApplications([]); // Ensure we always have an array
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     fetchApplications();
-  }, [customerId]);
-
-  // Update error state from API error
-  useEffect(() => {
-    if (apiError) {
-      setError(apiError.message);
-    }
-  }, [apiError]);
+  }, [customerId, refreshTrigger]);
 
   // Function to render stars based on proficiency
   const renderProficiencyStars = (proficiency: string) => {
@@ -96,82 +88,65 @@ const CustomerSkillApplicationsList: React.FC<CustomerSkillApplicationsListProps
     );
   };
 
-  // Ensure applications is always an array using standardized pattern
-  const safeApplications = applications || [];
+  if (isLoading) {
+    return <div className="py-4">Loading applied skills...</div>;
+  }
 
-  // Render the UI
+  // Ensure applications is always an array before mapping
+  const applicationsList = Array.isArray(applications) ? applications : [];
+
+  if (applicationsList.length === 0) {
+    return (
+      <div className="text-center py-6 text-gray-500">
+        No one has applied skills at this customer yet
+      </div>
+    );
+  }
+
   return (
-    <ContentCard
-      title="Applied Skills"
-      icon={GraduationCap}
-      iconColor="text-purple-600"
-    >
-      {error && (
-        <ErrorMessage 
-          message={error}
-          onRetry={fetchApplications}
-          onDismiss={() => setError(null)}
-        />
-      )}
-      
-      {isLoading ? (
-        <LoadingSpinner centered size="lg" text="Loading skills..." />
-      ) : safeApplications.length === 0 ? (
-        <div className="text-center py-6 text-gray-500">
-          No one has applied skills at this customer yet
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {safeApplications.map(app => (
-            <div key={app.id} className="border rounded-lg p-4 shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-medium flex items-center gap-1">
-                    {/* User entity link with icon */}
-                    <EntityLink
-                      type="user"
-                      id={app.user_id}
-                      name={app.user_name}
-                      showIcon
-                    />
-                    <span className="text-gray-500">applied</span>
-                    {/* Skill entity link with icon */}
-                    <EntityLink
-                      type="skill"
-                      id={app.skill_id}
-                      name={app.skill_name}
-                      showIcon
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-sm font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded-full">
-                      {app.proficiency || 'Unknown Proficiency'}
-                    </span>
-                    <div className="ml-1">
-                      {renderProficiencyStars(app.proficiency || '')}
-                    </div>
-                  </div>
-                  
-                  {app.start_date && (
-                    <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
-                      <Calendar className="h-3 w-3" />
-                      <span>Since {new Date(app.start_date).toLocaleDateString()}</span>
-                    </div>
-                  )}
-                  
-                  {app.notes && (
-                    <div className="mt-2 text-sm text-gray-600 border-t pt-2">
-                      <span className="font-semibold">Notes:</span> {app.notes}
-                    </div>
-                  )}
+    <div className="space-y-4">
+      {applicationsList.map(app => (
+        <div key={app.id} className="border rounded-lg p-4 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="font-medium flex items-center gap-1">
+                <Users className="h-4 w-4 text-blue-500" />
+                <Link to={`/users/${app.user_id}`} className="text-blue-500 hover:underline">
+                  {app.user_name}
+                </Link>
+                <span className="text-gray-500">applied</span>
+                <GraduationCap className="h-4 w-4 text-purple-500" />
+                <Link to={`/skills/${app.skill_id}`} className="text-purple-500 hover:underline">
+                  {app.skill_name}
+                </Link>
+              </div>
+              
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-sm font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded-full">
+                  {app.proficiency}
+                </span>
+                <div className="ml-1">
+                  {renderProficiencyStars(app.proficiency)}
                 </div>
               </div>
+              
+              {app.start_date && (
+                <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
+                  <Calendar className="h-3 w-3" />
+                  <span>Since {new Date(app.start_date).toLocaleDateString()}</span>
+                </div>
+              )}
+              
+              {app.notes && (
+                <div className="mt-2 text-sm text-gray-600 border-t pt-2">
+                  <span className="font-semibold">Notes:</span> {app.notes}
+                </div>
+              )}
             </div>
-          ))}
+          </div>
         </div>
-      )}
-    </ContentCard>
+      ))}
+    </div>
   );
 };
 

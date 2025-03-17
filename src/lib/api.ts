@@ -1,10 +1,6 @@
-/**
- * Standardized API functions for Tritium v4
- * This file contains all API functions for interacting with the backend
- */
-import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from './supabase';
-import { SkillApplication, ApiError } from '../types';
+import type { PostgrestError } from '@supabase/supabase-js';
+import type { Customer, Skill, SkillApplication } from '../types';
 
 export type QueryOptions = {
   select?: string;
@@ -12,429 +8,226 @@ export type QueryOptions = {
   filter?: { column: string; value: any };
 } | null;
 
-/**
- * Standardized API error type definition
- */
-export type ApiErrorType = PostgrestError & {
+export type ApiError = PostgrestError & {
   message: string;
 };
 
-/**
- * Generic fetch data function
- * Uses consistent error handling and return types
- */
 export async function fetchData<T>(
   table: string,
   options: QueryOptions = null
 ): Promise<T[]> {
-  try {
-    let query = supabase.from(table).select(options?.select || '*');
-
-    if (options?.filter) {
-      query = query.eq(options.filter.column, options.filter.value);
-    }
-
-    if (options?.orderBy) {
-      query = query.order(options.orderBy.column, {
-        ascending: options.orderBy.ascending ?? false,
-      });
-    }
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    // Type assertion to maintain compatibility while ensuring type safety
-    return (data || []) as T[];
-  } catch (err) {
-    console.error(`Error in fetchData(${table}):`, err);
-    throw err;
+  if (!options) {
+    return [];
   }
+
+  let query = supabase.from(table).select(options.select || '*');
+
+  if (options.orderBy) {
+    query = query.order(options.orderBy.column, {
+      ascending: options.orderBy.ascending ?? false,
+    });
+  }
+
+  if (options.filter) {
+    const { column, value } = options.filter;
+    
+    if (Array.isArray(value)) {
+      query = query.in(column, value);
+    } else {
+      query = query.eq(column, value);
+    }
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
 }
 
-/**
- * Standardized create data function
- */
 export async function createData<T>(
   table: string,
   data: Partial<T>
 ): Promise<T> {
-  try {
-    const { data: createdData, error } = await supabase
-      .from(table)
-      .insert(data)
-      .select()
-      .single();
+  const { data: result, error } = await supabase
+    .from(table)
+    .insert([data])
+    .select()
+    .single();
 
-    if (error) throw error;
-
-    return createdData as T;
-  } catch (err) {
-    console.error(`Error in createData(${table}):`, err);
-    throw err;
+  if (error) {
+    throw error;
   }
+
+  return result;
 }
 
-/**
- * Standardized update data function
- */
 export async function updateData<T>(
   table: string,
   id: string | number,
   data: Partial<T>
 ): Promise<T> {
-  try {
-    const { data: updatedData, error } = await supabase
-      .from(table)
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single();
+  const { data: result, error } = await supabase
+    .from(table)
+    .update(data)
+    .eq('id', id)
+    .select()
+    .single();
 
-    if (error) throw error;
-
-    return updatedData as T;
-  } catch (err) {
-    console.error(`Error in updateData(${table}):`, err);
-    throw err;
+  if (error) {
+    throw error;
   }
+
+  return result;
 }
 
-/**
- * Standardized delete data function
- */
 export async function deleteData(
   table: string,
   id: string | number
 ): Promise<void> {
-  try {
-    const { error } = await supabase.from(table).delete().eq('id', id);
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq('id', id);
 
-    if (error) throw error;
-  } catch (err) {
-    console.error(`Error in deleteData(${table}):`, err);
-    throw err;
+  if (error) {
+    throw error;
   }
 }
 
-/**
- * Standardized fetch related data function
- */
 export async function fetchRelatedData<T>(
   table: string,
   column: string,
   value: any,
   select: string = '*'
 ): Promise<T[]> {
-  try {
-    const { data, error } = await supabase
-      .from(table)
-      .select(select)
-      .eq(column, value);
+  const { data, error } = await supabase
+    .from(table)
+    .select(select)
+    .eq(column, value);
 
-    if (error) throw error;
-
-    // Type assertion to maintain compatibility while ensuring type safety
-    return (data || []) as T[];
-  } catch (err) {
-    console.error(`Error in fetchRelatedData(${table}):`, err);
-    throw err;
+  if (error) {
+    throw error;
   }
+
+  return data || [];
 }
 
-/**
- * Standardized fetch entity by ID function
- */
 export async function fetchEntityById<T>(
   table: string,
   id: string | number,
   select: string = '*'
 ): Promise<T> {
-  try {
-    const { data, error } = await supabase
-      .from(table)
-      .select(select)
-      .eq('id', id)
-      .single();
+  const { data, error } = await supabase
+    .from(table)
+    .select(select)
+    .eq('id', id)
+    .single();
 
-    if (error) throw error;
-
-    return data as T;
-  } catch (err) {
-    console.error(`Error in fetchEntityById(${table}):`, err);
-    throw err;
+  if (error) {
+    throw error;
   }
+
+  return data;
 }
 
-interface UserRelation {
-  id: string;
-  email: string;
-}
-
-interface SkillRelation {
-  id: number;
-  name: string;
-}
-
-interface CustomerRelation {
-  id: number;
-  name: string;
-}
-
-interface SupabaseSkillApplication {
-  id: number;
-  user_id: string;
-  skill_id: number;
-  customer_id: number;
-  proficiency: number;
-  start_date: string | null;
-  end_date: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  skill: { id: number; name: string; }[];
-  user: { id: string; email: string; }[];
-  customer: { id: number; name: string; }[];
-}
-
-interface SkillApplicationResponse extends SupabaseSkillApplication {
-  skill_name: string;
-  user_name: string;
-  customer_name: string;
-}
-
-/**
- * Get all skill applications for a user
- * Uses standardized query format with consistent foreign key syntax
- */
-export const getUserSkillApplications = async (userId: string): Promise<SkillApplicationResponse[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('skill_applications')
-      .select(`
-        id,
-        user_id,
-        skill_id,
-        customer_id,
-        proficiency,
-        start_date,
-        end_date,
-        notes,
-        created_at,
-        updated_at,
-        skill:skills(id, name),
-        user:user_id(id, email),
-        customer:customers(id, name)
-      `)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    // Type assertion and data transformation
-    return (data as SupabaseSkillApplication[]).map(app => ({
-      ...app,
-      skill_name: app.skill[0]?.name || 'Unknown Skill',
-      user_name: app.user[0]?.email || 'Unknown User',
-      customer_name: app.customer[0]?.name || 'Unknown Customer'
-    }));
-  } catch (err) {
-    console.error('Error in getUserSkillApplications:', err);
-    throw err;
-  }
+// Skill Applications API
+export const getUserSkillApplications = async (userId: string) => {
+  const { data, error } = await supabase
+    .rpc('get_user_skill_applications', { p_user_id: userId });
+  
+  if (error) throw error;
+  return data;
 };
 
-/**
- * Get all skill applications for a customer
- * Uses standardized query format with consistent foreign key syntax
- */
-export const getCustomerSkillApplications = async (customerId: number): Promise<SkillApplicationResponse[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('skill_applications')
-      .select(`
-        id,
-        user_id,
-        skill_id,
-        customer_id,
-        proficiency,
-        start_date,
-        end_date,
-        notes,
-        created_at,
-        updated_at,
-        skill:skills(id, name),
-        user:auth_users!user_id(id, email),
-        customer:customers(id, name)
-      `)
-      .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    // Type assertion and data transformation
-    return (data as SupabaseSkillApplication[]).map(app => ({
-      ...app,
-      skill_name: app.skill[0]?.name || 'Unknown Skill',
-      user_name: app.user[0]?.email || 'Unknown User',
-      customer_name: app.customer[0]?.name || 'Unknown Customer'
-    }));
-  } catch (err) {
-    console.error('Error in getCustomerSkillApplications:', err);
-    throw err;
-  }
+export const getCustomerSkillApplications = async (customerId: number) => {
+  const { data, error } = await supabase
+    .rpc('get_customer_skill_applications', { p_customer_id: customerId });
+  
+  if (error) throw error;
+  return data;
 };
 
-/**
- * Get a single skill application by ID
- * Uses standardized query format with consistent foreign key syntax
- */
-export const getSkillApplication = async (id: number): Promise<SkillApplicationResponse> => {
-  try {
-    const { data, error } = await supabase
-      .from('skill_applications')
-      .select(`
-        id,
-        user_id,
-        skill_id,
-        customer_id,
-        proficiency,
-        start_date,
-        end_date,
-        notes,
-        created_at,
-        updated_at,
-        skill:skills(id, name),
-        user:user_id(id, email),
-        customer:customers(id, name)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-
-    // Type assertion and data transformation
-    const rawApp = data as SupabaseSkillApplication;
-    return {
-      ...rawApp,
-      skill_name: rawApp.skill[0]?.name || 'Unknown Skill',
-      user_name: rawApp.user[0]?.email || 'Unknown User',
-      customer_name: rawApp.customer[0]?.name || 'Unknown Customer'
-    };
-  } catch (err) {
-    console.error('Error in getSkillApplication:', err);
-    throw err;
-  }
-};
-
-/**
- * Get all skill applications for a skill
- * Uses standardized query format with consistent foreign key syntax
- */
-export const getSkillApplicationsBySkill = async (skillId: number): Promise<SkillApplicationResponse[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('skill_applications')
-      .select(`
-        id,
-        user_id,
-        skill_id,
-        customer_id,
-        proficiency,
-        start_date,
-        end_date,
-        notes,
-        created_at,
-        updated_at,
-        skill:skills(id, name),
-        user:user_id(id, email),
-        customer:customers(id, name)
-      `)
-      .eq('skill_id', skillId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    // Type assertion and data transformation
-    return (data as SupabaseSkillApplication[]).map(app => ({
-      ...app,
-      skill_name: app.skill[0]?.name || 'Unknown Skill',
-      user_name: app.user[0]?.email || 'Unknown User',
-      customer_name: app.customer[0]?.name || 'Unknown Customer'
-    }));
-  } catch (err) {
-    console.error('Error in getSkillApplicationsBySkill:', err);
-    throw err;
-  }
-};
-
-/**
- * Create a new skill application
- * Validates data before submission
- */
 export const createSkillApplication = async (skillApplication: Omit<SkillApplication, 'id' | 'created_at' | 'updated_at'>) => {
-  try {
-    // Standardized data validation
-    if (!skillApplication.user_id || !skillApplication.skill_id || !skillApplication.customer_id) {
-      throw new Error('Missing required fields: user_id, skill_id, and customer_id are required');
-    }
-
-    const { data, error } = await supabase
-      .from('skill_applications')
-      .insert(skillApplication)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return data;
-  } catch (err) {
-    console.error('Error in createSkillApplication:', err);
-    throw err;
-  }
+  const { data, error } = await supabase
+    .from('skill_applications')
+    .insert(skillApplication)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
 };
 
-/**
- * Update an existing skill application
- */
 export const updateSkillApplication = async (id: number, updates: Partial<Omit<SkillApplication, 'id' | 'created_at' | 'updated_at'>>) => {
+  const { data, error } = await supabase
+    .from('skill_applications')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+};
+
+export const deleteSkillApplication = async (id: number) => {
+  const { error } = await supabase
+    .from('skill_applications')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+  return true;
+};
+
+export const getSkillApplication = async (id: number) => {
   try {
     const { data, error } = await supabase
       .from('skill_applications')
-      .update(updates)
+      .select(`
+        id,
+        user_id,
+        skill_id,
+        customer_id,
+        proficiency,
+        start_date,
+        end_date,
+        notes,
+        created_at,
+        updated_at,
+        skills:skill_id(id, name),
+        customers:customer_id(id, name),
+        profiles:user_id(id, full_name)
+      `)
       .eq('id', id)
-      .select()
       .single();
-
+    
     if (error) throw error;
-
-    return data;
+    
+    if (data) {
+      // Safely extract names from potentially undefined objects
+      const skillName = data.skills && typeof data.skills === 'object' ? data.skills.name : undefined;
+      const customerName = data.customers && typeof data.customers === 'object' ? data.customers.name : undefined;
+      const userName = data.profiles && typeof data.profiles === 'object' ? data.profiles.full_name : undefined;
+      
+      return {
+        ...data,
+        skill_name: skillName,
+        customer_name: customerName,
+        user_name: userName
+      };
+    }
+    
+    return null;
   } catch (err) {
-    console.error('Error in updateSkillApplication:', err);
+    console.error('Error fetching skill application:', err);
     throw err;
   }
 };
 
-/**
- * Delete a skill application
- */
-export const deleteSkillApplication = async (id: number) => {
-  try {
-    const { error } = await supabase
-      .from('skill_applications')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-  } catch (err) {
-    console.error('Error in deleteSkillApplication:', err);
-    throw err;
-  }
-};
-
-/**
- * Standardized query wrapper function
- */
 export async function query<T>(
   query: Promise<{
     data: T | null;
@@ -443,8 +236,11 @@ export async function query<T>(
 ): Promise<{ data: T | null; error: string | null }> {
   try {
     const { data, error } = await query;
-    return { data, error: error ? error.message : null };
-  } catch (err) {
-    return { data: null, error: err instanceof Error ? err.message : 'Unknown error' };
+    if (error) {
+      return { data: null, error: error.message };
+    }
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: (error as Error).message };
   }
 }

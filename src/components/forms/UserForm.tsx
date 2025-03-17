@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Modal, Button, Label, TextInput, Textarea } from 'flowbite-react';
 import { useMutationWithCache } from '../../lib/hooks/useMutationWithCache';
-import { useMutation } from '@tanstack/react-query';
 import type { Profile } from '../../types';
-import { parseFullNameToFirstLast, formatFullName } from '@/lib/utils';
 
 interface UserFormProps {
   user: Partial<Profile>;
@@ -13,10 +11,9 @@ interface UserFormProps {
 }
 
 export function UserForm({ user, isOpen, onClose, onSubmit }: UserFormProps) {
-  const [formData, setFormData] = useState<Partial<Profile>>(user);
-  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = React.useState<Partial<Profile>>(user);
 
-  const { update: updateUser } = useMutationWithCache<Profile>({
+  const { update: updateUser, isLoading } = useMutationWithCache<Profile>({
     table: 'profiles',
     invalidateQueries: ['profiles', 'audit'],
     successMessage: 'User updated successfully',
@@ -33,12 +30,7 @@ export function UserForm({ user, isOpen, onClose, onSubmit }: UserFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.id) {
-      setIsLoading(true);
-      try {
-        await updateUser({ id: formData.id, data: formData });
-      } finally {
-        setIsLoading(false);
-      }
+      await updateUser({ id: formData.id, data: formData });
     }
   };
 
@@ -51,20 +43,11 @@ export function UserForm({ user, isOpen, onClose, onSubmit }: UserFormProps) {
         <Modal.Body>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="first_name">First Name</Label>
+              <Label htmlFor="full_name">Full Name</Label>
               <TextInput
-                id="first_name"
-                value={formData.first_name || ''}
-                onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="last_name">Last Name</Label>
-              <TextInput
-                id="last_name"
-                value={formData.last_name || ''}
-                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                id="full_name"
+                value={formData.full_name || ''}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                 required
               />
             </div>

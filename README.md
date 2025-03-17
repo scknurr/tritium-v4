@@ -1,189 +1,81 @@
-# Tritium v4: Skill-Customer Management System
+# tritium-v4
 
-A comprehensive system for managing skills, customers, and their relationships. Track which skills are being applied at which customers, manage team members, and view activity timelines.
+[Edit in StackBlitz next generation editor ⚡️](https://stackblitz.com/~/github.com/scknurr/tritium-v4)
 
-## 📋 Quick Links
+## Local Development with Supabase
 
-- 🏠 [Production](#) (TBD)
-- 🧪 [Local Development](http://localhost:5173)
-- 📊 [Supabase Dashboard](#) (TBD)
-- 📝 [Developer Notes](./DEVELOPER_NOTES.md)
-- 🔄 [Development Context](./context.json)
+This project can be run locally with a local Supabase instance via Docker.
 
-## 🚀 Getting Started
+### Prerequisites
 
-```bash
-# Clone the repository
-git clone [repository-url]
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [npm](https://www.npmjs.com/) (v7 or later)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (for database migrations and linking to remote project)
 
-# Navigate to the project directory
-cd tritium-v4
+### Setup Instructions
 
-# Install dependencies
-npm install
+1. Clone the repository:
+   ```
+   git clone https://github.com/scknurr/tritium-v4.git
+   cd tritium-v4
+   ```
 
-# Start the Supabase local development environment
-npx supabase start
+2. Install dependencies:
+   ```
+   npm install
+   ```
 
-# Reset the database (optional)
-npx supabase db reset
+3. Start the local Supabase instance:
+   ```
+   npm run supabase:start
+   ```
+   
+   This will start the Supabase services on the following ports:
+   - PostgreSQL: 5432
+   - REST API: 8000
+   - Supabase API: 54321
+   - Supabase Studio: 9999
 
-# Start the development server
-npm run dev
+4. Access Supabase Studio at http://localhost:9999 in your browser.
+
+5. Link to remote Supabase project:
+   ```
+   supabase link --project-ref vearpapzcfmtbtbrnuzb
+   ```
+
+6. Run the development server:
+   ```
+   npm run dev:local
+   ```
+
+7. Open your browser and navigate to the URL shown in the terminal (typically http://localhost:5173).
+
+### Simplified Setup
+
+You can also use the provided setup script which handles all steps automatically:
+```
+./setup-local-dev.sh
 ```
 
-## 🏗️ Architecture
+### Stopping the Services
 
-### Front-end
-
-- **Framework**: React with TypeScript
-- **Build Tool**: Vite
-- **State Management**: React Hooks + Context
-- **API Queries**: Supabase JavaScript client
-- **UI Components**: Custom components with Tailwind CSS
-
-### Back-end
-
-- **Database**: PostgreSQL (via Supabase)
-- **Authentication**: Supabase Auth
-- **Storage**: Supabase Storage
-- **Realtime**: Supabase Realtime for live updates
-
-### Key Components
-
-1. **EntityDetail**: Base component for detail views (Customers, Skills)
-2. **UnifiedTimeline**: Shows activity timeline for any entity
-3. **Form Components**: For creating and editing entities
-4. **ApplySkillButton**: For applying skills to customers
-
-## 📊 Data Model
-
-### Core Tables
-
-- `customers`: Customer organizations
-- `industries`: Industries for categorization
-- `skills`: Available skills in the system
-- `profiles`: User profiles
-- `user_customers`: User-customer relationships (team members)
-- `user_skills`: User-skill relationships
-- `skill_applications`: Skills applied at customers
-- `customer_roles`: Roles users can have at customers
-- `audit_logs`: System activity logs
-
-### Data Flow
-
+To stop the Supabase services, run:
 ```
-┌────────────┐         ┌────────────┐         ┌────────────┐
-│            │         │            │         │            │
-│   Users    │◄────────│   Skills   │─────────►  Customers │
-│            │         │            │         │            │
-└─────┬──────┘         └─────┬──────┘         └──────┬─────┘
-      │                      │                       │
-      │                      │                       │
-      │                      ▼                       │
-      │               ┌────────────┐                 │
-      └───────────────►   Skill    │◄────────────────┘
-                      │Applications│
-                      └─────┬──────┘
-                            │
-                            │
-                            ▼
-                     ┌────────────┐
-                     │            │
-                     │ Audit Logs │
-                     │            │
-                     └────────────┘
+npm run supabase:stop
 ```
 
-## 🔍 Key Features
-
-1. **Customer Management**:
-   - Create, update, and delete customers
-   - Associate with industries
-   - View and manage team members
-
-2. **Skill Management**:
-   - Create, update, and delete skills
-   - Track where skills are being applied
-
-3. **Skill Applications**:
-   - Apply skills to customers with proficiency levels
-   - Track history of skill applications
-
-4. **Activity Timeline**:
-   - View activity for any entity (customer, skill, user)
-   - Filter by activity type
-
-## 🐞 Debugging Tips
-
-### 1. Data Inconsistency Issues
-
-When you notice data inconsistency (like skills showing in timeline but not in Applied Skills):
-
-1. Check browser console logs to see what data was retrieved
-2. Compare direct skill_applications query vs timeline events
-3. Verify metadata in audit_logs entries
-4. Check timestamps to ensure latest data is being displayed
-
-### 2. Timeline Issues
-
-If timeline events aren't appearing correctly:
-
-1. Ensure both `entityType`/`entityId` AND `relatedEntityType`/`relatedEntityId` are set
-2. Check audit_logs table for the expected entries
-3. Review `useUnifiedTimeline` hook configuration
-4. Verify event transformations in `timeline-service.ts`
-
-### 3. Component Loading States
-
-If components are stuck in loading:
-
-1. Check for Supabase connection issues
-2. Verify query parameters are correct
-3. Check for null/undefined IDs in queries
-4. Ensure proper error handling
-
-## 📁 Project Structure
-
+To stop and remove volumes (will delete all data):
 ```
-src/
-├── components/           # Reusable UI components
-│   ├── forms/            # Form components
-│   ├── ui/               # UI components like Timeline, EntityDetail
-│   └── ...
-├── hooks/                # Custom React hooks
-├── lib/                  # Utility functions and services
-│   ├── supabase.ts       # Supabase client
-│   ├── hooks/            # Framework-specific hooks
-│   └── timeline-service.ts # Timeline processing
-├── pages/                # Page components
-│   ├── detail/           # Entity detail pages
-│   └── ...
-├── types/                # TypeScript type definitions
-├── routes.tsx            # Application routes
-└── App.tsx               # Main application component
+docker-compose down -v
 ```
 
-## 🧪 Testing
+### Troubleshooting
 
-```bash
-# Run tests
-npm test
-
-# Run specific test file
-npm test -- MyComponent.test.tsx
-```
-
-## 📝 Code Conventions
-
-- Use functional components with hooks
-- TypeScript interfaces for all props and data structures
-- Consistent error handling
-- Comprehensive logging for debugging
-
-## 🤝 Contributing
-
-1. Always review DEVELOPER_NOTES.md for current issues and patterns
-2. Check context.json for latest project state
-3. Follow data flow conventions for consistency
-4. Run comprehensive tests before committing
+- If you encounter permission issues with Docker, you may need to run Docker commands with `sudo`.
+- If ports are already in use, you can modify the port mappings in the `docker-compose.yml` file.
+- Check the container logs for any errors:
+  ```
+  docker-compose logs -f
+  ```
