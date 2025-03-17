@@ -6,7 +6,7 @@ import {
   TimelineCustomer,
   TimelineSkill
 } from '../types/timeline';
-import { formatDateTime, formatTimeAgo, formatFullName } from './utils';
+import { formatDateTime, formatTimeAgo } from './utils';
 import { createLogger } from './debug';
 import { supabase } from './supabase';
 
@@ -99,8 +99,7 @@ export function extractUser(
   
   return {
     id: userId,
-    first_name: user ? user.first_name || '' : '',
-    last_name: user ? user.last_name || '' : '',
+    name: user ? `${user.first_name} ${user.last_name}`.trim() || user.email || 'Unknown User' : 'Unknown User',
     email: user?.email,
     role
   };
@@ -251,7 +250,7 @@ export function extractSkill(
  */
 export function transformTimelineItem(
   item: TimelineItem,
-  users: Array<{id: string; first_name?: string; last_name?: string; email?: string}> = [],
+  users: Array<{id: string; full_name?: string; email?: string}> = [],
   customers: Array<{id: number | string; name: string}> = [],
   skills: Array<{id: number | string; name: string}> = []
 ): TimelineEvent {
@@ -287,14 +286,7 @@ export function transformTimelineItem(
       id: item.id,
       type: eventType,
       timestamp: item.event_time,
-      user: {
-        id: user.id,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        name: formatFullName(user.first_name, user.last_name, user.email) || 'Unknown User',
-        email: user.email,
-        role: item.role
-      },
+      user,
       original: {
         event_type: item.event_type,
         entity_type: item.entity_type,
@@ -326,10 +318,7 @@ export function transformTimelineItem(
       timestamp: item.event_time,
       user: {
         id: item.user_id,
-        first_name: 'Unknown',
-        last_name: '',
-        name: 'Unknown User',
-        email: 'unknown@example.com'
+        name: 'Unknown User'
       },
       original: {
         event_type: item.event_type,
@@ -359,7 +348,7 @@ export function formatEventTime(timestamp: string, useRelative = true): string {
  */
 export function transformTimelineItems(
   items: TimelineItem[],
-  users: Array<{id: string; first_name?: string; last_name?: string; email?: string}> = [],
+  users: Array<{id: string; full_name?: string; email?: string}> = [],
   customers: Array<{id: number | string; name: string}> = [],
   skills: Array<{id: number | string; name: string}> = []
 ): TimelineEvent[] {
@@ -369,118 +358,12 @@ export function transformTimelineItems(
 }
 
 /**
- * Alternative implementation of transformTimelineItems for raw timeline items
- */
-export async function transformRawTimelineItems(rawItems: RawTimelineItem[]): Promise<TimelineEvent[]> {
-  const transformedItems: TimelineEvent[] = [];
-  
-  for (const item of rawItems) {
-    try {
-      // Parse event type to ensure it's a valid TimelineEventType
-      let eventType: TimelineEventType;
-      try {
-        eventType = item.event_type as TimelineEventType;
-        // Fallback for unknown event types
-        if (!Object.values(TimelineEventType).includes(eventType)) {
-          logger.warn(`Unknown event type: ${item.event_type}, using GENERIC_UPDATED`);
-          eventType = TimelineEventType.GENERIC_UPDATED;
-        }
-      } catch (e) {
-        logger.warn(`Invalid event type: ${item.event_type}, using GENERIC_UPDATED`);
-        eventType = TimelineEventType.GENERIC_UPDATED;
-      }
-      
-      // Create the basic user information from the joined users data
-      const user: TimelineUser = {
-        id: item.users.id || item.actor_id,
-        first_name: item.users.first_name || '',
-        last_name: item.users.last_name || '',
-        name: formatFullName(item.users.first_name, item.users.last_name, item.users.email),
-        email: item.users.email || ''
-      };
-      
-      // Initialize the timeline event
-      const timelineEvent: TimelineEvent = {
-        id: item.id,
-        type: eventType,
-        timestamp: new Date(item.created_at).toISOString(),
-        user,
-        metadata: item.metadata || {}
-      };
-      
-      // Fetch related entity details based on the entity type
-      if (item.entity_type && item.entity_id) {
-        timelineEvent.entity_type = item.entity_type;
-        timelineEvent.entity_id = item.entity_id;
-        
-        switch (item.entity_type) {
-          case 'users':
-          case 'profiles':
-            if (item.entity_id !== item.actor_id) {
-              const targetUser = await fetchUserDetails(item.entity_id);
-              if (targetUser) {
-                timelineEvent.targetUser = targetUser;
-              }
-            }
-            break;
-            
-          case 'customers':
-            const customer = await fetchCustomerDetails(item.entity_id);
-            if (customer) {
-              timelineEvent.customer = customer;
-            }
-            break;
-            
-          case 'skills':
-            const skill = await fetchSkillDetails(item.entity_id, item.metadata);
-            if (skill) {
-              timelineEvent.skill = skill;
-            }
-            break;
-        }
-      }
-      
-      // Handle special cases and enrichment based on event type
-      // Skill applications require both skill and customer info
-      if (
-        (eventType === TimelineEventType.SKILL_APPLIED || 
-         eventType === TimelineEventType.SKILL_REMOVED) && 
-        item.metadata
-      ) {
-        // Try to get customer info if skill was applied at a customer
-        if (item.metadata.customer_id && !timelineEvent.customer) {
-          const customer = await fetchCustomerDetails(item.metadata.customer_id);
-          if (customer) {
-            timelineEvent.customer = customer;
-          }
-        }
-        
-        // Try to get skill info if not already fetched
-        if (item.metadata.skill_id && !timelineEvent.skill) {
-          const skill = await fetchSkillDetails(item.metadata.skill_id, item.metadata);
-          if (skill) {
-            timelineEvent.skill = skill;
-          }
-        }
-      }
-      
-      transformedItems.push(timelineEvent);
-    } catch (err) {
-      logger.error(`Error transforming timeline item ${item.id}`, err);
-      // Skip this item and continue with others
-    }
-  }
-  
-  return transformedItems;
-}
-
-/**
  * Builds timeline events specifically for a customer.
  */
 export function buildCustomerTimelineEvents(
   customerId: string | number,
   auditLogs: TimelineItem[],
-  users: Array<{id: string; first_name?: string; last_name?: string; email?: string}> = [],
+  users: Array<{id: string; full_name?: string; email?: string}> = [],
   skills: Array<{id: number | string; name: string}> = []
 ): TimelineEvent[] {
   // Filter logs related to this customer
@@ -525,7 +408,7 @@ export function buildCustomerTimelineEvents(
 export function buildSkillTimelineEvents(
   skillId: string | number,
   auditLogs: TimelineItem[],
-  users: Array<{id: string; first_name?: string; last_name?: string; email?: string}> = [],
+  users: Array<{id: string; full_name?: string; email?: string}> = [],
   customers: Array<{id: number | string; name: string}> = []
 ): TimelineEvent[] {
   // Filter logs related to this skill
@@ -612,7 +495,7 @@ export function buildUserTimelineEvents(
   });
   
   // Transform logs to events
-  const user = { id: userId, first_name: `User`, last_name: userId, email: `user_${userId}@example.com` };
+  const user = { id: userId, full_name: `User ${userId}` };
   return transformTimelineItems(userLogs, [user], customers, skills);
 }
 
@@ -629,8 +512,7 @@ interface RawTimelineItem {
   metadata: any;
   users: {
     id: string;
-    first_name: string;
-    last_name: string;
+    full_name: string;
     email: string;
   };
 }
@@ -646,25 +528,19 @@ async function fetchUserDetails(userId: string): Promise<TimelineUser | null> {
       .eq('id', userId)
       .single();
     
-    if (error) {
-      logger.warn(`Could not fetch user details for ID ${userId}`);
-      return null;
-    }
-    
-    if (!data) {
+    if (error || !data) {
+      logger.warn(`Could not fetch user details for ID ${userId}`, error);
       return null;
     }
     
     return {
       id: data.id,
-      first_name: data.first_name,
-      last_name: data.last_name,
-      name: formatFullName(data.first_name, data.last_name, data.email),
+      name: data.first_name + ' ' + data.last_name || data.email || 'Unknown User',
       email: data.email,
       role: data.role
     };
   } catch (err) {
-    logger.error('Error fetching user details');
+    logger.error('Error fetching user details', err);
     return null;
   }
 }
@@ -680,12 +556,8 @@ async function fetchCustomerDetails(customerId: string): Promise<TimelineCustome
       .eq('id', customerId)
       .single();
     
-    if (error) {
-      logger.warn(`Could not fetch customer details for ID ${customerId}`);
-      return null;
-    }
-    
-    if (!data) {
+    if (error || !data) {
+      logger.warn(`Could not fetch customer details for ID ${customerId}`, error);
       return null;
     }
     
@@ -696,7 +568,7 @@ async function fetchCustomerDetails(customerId: string): Promise<TimelineCustome
       description: data.description
     };
   } catch (err) {
-    logger.error('Error fetching customer details');
+    logger.error('Error fetching customer details', err);
     return null;
   }
 }
@@ -712,12 +584,8 @@ async function fetchSkillDetails(skillId: string, metadata?: any): Promise<Timel
       .eq('id', skillId)
       .single();
     
-    if (error) {
-      logger.warn(`Could not fetch skill details for ID ${skillId}`);
-      return null;
-    }
-    
-    if (!data) {
+    if (error || !data) {
+      logger.warn(`Could not fetch skill details for ID ${skillId}`, error);
       return null;
     }
     
@@ -744,9 +612,115 @@ async function fetchSkillDetails(skillId: string, metadata?: any): Promise<Timel
       proficiencyLevel
     };
   } catch (err) {
-    logger.error('Error fetching skill details');
+    logger.error('Error fetching skill details', err);
     return null;
   }
+}
+
+/**
+ * Transforms raw database timeline items into the unified TimelineEvent format
+ */
+export async function transformTimelineItems(rawItems: RawTimelineItem[]): Promise<TimelineEvent[]> {
+  const transformedItems: TimelineEvent[] = [];
+  
+  for (const item of rawItems) {
+    try {
+      // Parse event type to ensure it's a valid TimelineEventType
+      let eventType: TimelineEventType;
+      try {
+        eventType = item.event_type as TimelineEventType;
+        // Fallback for unknown event types
+        if (!Object.values(TimelineEventType).includes(eventType)) {
+          logger.warn(`Unknown event type: ${item.event_type}, using GENERIC_UPDATED`);
+          eventType = TimelineEventType.GENERIC_UPDATED;
+        }
+      } catch (e) {
+        logger.warn(`Invalid event type: ${item.event_type}, using GENERIC_UPDATED`);
+        eventType = TimelineEventType.GENERIC_UPDATED;
+      }
+      
+      // Create the basic user information from the joined users data
+      const user: TimelineUser = {
+        id: item.users.id || item.actor_id,
+        name: item.users.full_name || 'Unknown User',
+        email: item.users.email || ''
+      };
+      
+      // Initialize the timeline event
+      const timelineEvent: TimelineEvent = {
+        id: item.id,
+        type: eventType,
+        timestamp: new Date(item.created_at).toISOString(),
+        user,
+        metadata: item.metadata || {}
+      };
+      
+      // Fetch related entity details based on the entity type
+      if (item.entity_type && item.entity_id) {
+        switch (item.entity_type) {
+          case 'users':
+          case 'profiles':
+            if (item.entity_id !== item.actor_id) {
+              const targetUser = await fetchUserDetails(item.entity_id);
+              if (targetUser) {
+                timelineEvent.targetUser = targetUser;
+              }
+            }
+            break;
+            
+          case 'customers':
+            const customer = await fetchCustomerDetails(item.entity_id);
+            if (customer) {
+              timelineEvent.customer = customer;
+            }
+            break;
+            
+          case 'skills':
+            const skill = await fetchSkillDetails(item.entity_id, item.metadata);
+            if (skill) {
+              timelineEvent.skill = skill;
+            }
+            break;
+            
+          default:
+            // For unknown entity types, at least store the basic info
+            timelineEvent.entityType = item.entity_type;
+            timelineEvent.entityId = item.entity_id;
+        }
+      }
+      
+      // Handle special cases and enrichment based on event type
+      // Skill applications require both skill and customer info
+      if (
+        (eventType === TimelineEventType.SKILL_APPLIED || 
+         eventType === TimelineEventType.SKILL_REMOVED) && 
+        item.metadata
+      ) {
+        // Try to get customer info if skill was applied at a customer
+        if (item.metadata.customer_id && !timelineEvent.customer) {
+          const customer = await fetchCustomerDetails(item.metadata.customer_id);
+          if (customer) {
+            timelineEvent.customer = customer;
+          }
+        }
+        
+        // Try to get skill info if not already fetched
+        if (item.metadata.skill_id && !timelineEvent.skill) {
+          const skill = await fetchSkillDetails(item.metadata.skill_id, item.metadata);
+          if (skill) {
+            timelineEvent.skill = skill;
+          }
+        }
+      }
+      
+      transformedItems.push(timelineEvent);
+    } catch (err) {
+      logger.error(`Error transforming timeline item ${item.id}`, err);
+      // Skip this item and continue with others
+    }
+  }
+  
+  return transformedItems;
 }
 
 /**
@@ -763,7 +737,7 @@ export async function recordTimelineEvent({
   actorId: string;
   entityType: string;
   entityId: string;
-  metadata?: any;
+  metadata?: TimelineMetadata;
 }): Promise<{ success: boolean; error?: any }> {
   try {
     const { error } = await supabase.from('timeline').insert({
@@ -775,13 +749,13 @@ export async function recordTimelineEvent({
     });
     
     if (error) {
-      logger.error('Error recording timeline event');
+      logger.error('Error recording timeline event', error);
       return { success: false, error };
     }
     
     return { success: true };
   } catch (err) {
-    logger.error('Exception recording timeline event');
+    logger.error('Exception recording timeline event', err);
     return { success: false, error: err };
   }
 } 

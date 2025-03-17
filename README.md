@@ -187,34 +187,3 @@ npm test -- MyComponent.test.tsx
 2. Check context.json for latest project state
 3. Follow data flow conventions for consistency
 4. Run comprehensive tests before committing
-
-## Recent Updates
-
-### Database Normalization (March 2024)
-
-We've completed a significant normalization effort:
-
-- Updated profile handling to use separate `first_name` and `last_name` fields instead of `full_name`
-- Standardized name formatting across the application
-- Improved signup flow to collect structured name data
-- Applied migrations to ensure database schema consistency
-- Documented normalization patterns in [NORMALIZATION.md](./NORMALIZATION.md)
-
-## Setup
-
-```bash
-# Install dependencies
-npm install
-
-# Start the application
-npm run dev
-```
-
-## Documentation
-
-- [NORMALIZATION.md](./NORMALIZATION.md) - Standards for database and code normalization
-- [STANDARDS.md](./STANDARDS.md) - Coding and architectural standards
-
-## License
-
-Copyright © 2024

@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { EVENT_TYPES } from './constants';
-import { formatFullName } from './utils';
 
 /**
  * AUDIT LOG BEST PRACTICES
@@ -118,12 +117,12 @@ async function getEntityName(type: string, id: string | number): Promise<string>
 
 async function getUserName(userId: string): Promise<string> {
   try {
-    const { data: user } = await supabase
+    const { data } = await supabase
       .from('profiles')
       .select('first_name, last_name, email')
       .eq('id', userId)
       .single();
-    return formatFullName(user?.first_name, user?.last_name, user?.email);
+    return data ? `${data.first_name} ${data.last_name}`.trim() || data.email || userId : userId;
   } catch (error) {
     console.error('Error getting user name:', error);
     return userId;

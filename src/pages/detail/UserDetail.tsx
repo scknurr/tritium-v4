@@ -18,7 +18,6 @@ import { useToast } from '../../lib/hooks/useToast';
 import { Profile } from '../../types';
 import { EntityLink } from '../../components/ui/EntityLink';
 import { Button } from 'flowbite-react';
-import { formatFullName } from '@/lib/utils';
 
 // Type definitions for users, skills, and customer relationships
 interface UserSkill {
@@ -340,6 +339,11 @@ export function UserDetail() {
   // Create safe arrays for data
   const safeSkills = skills || [];
   const safeCustomers = customers || [];
+
+  // Update the title to use formatFullName
+  const formatFullName = (first_name: string, last_name: string, email: string) => {
+    return `${first_name} ${last_name} (${email})`;
+  };
 
   return (
     <EntityDetail

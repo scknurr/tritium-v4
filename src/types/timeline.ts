@@ -42,9 +42,7 @@ export enum TimelineEventType {
  */
 export interface TimelineUser {
   id: string;
-  first_name?: string;
-  last_name?: string;
-  name?: string; // Keep for backward compatibility
+  name: string;
   email?: string;
   avatarUrl?: string;
   role?: string;
@@ -56,8 +54,6 @@ export interface TimelineUser {
 export interface TimelineCustomer {
   id: number | string;
   name: string;
-  industry?: string;
-  description?: string;
 }
 
 /**
@@ -68,7 +64,6 @@ export interface TimelineSkill {
   name: string;
   category?: string;
   proficiencyLevel?: number | string;
-  description?: string;
 }
 
 /**
@@ -91,17 +86,25 @@ export interface TimelineMetadata {
 export interface TimelineEvent {
   id: string | number;
   type: TimelineEventType;
-  user: TimelineUser;
+  user: {
+    id: string | number;
+    name: string;
+    role?: string;
+  };
   timestamp: string;
-  skill?: TimelineSkill;
-  customer?: TimelineCustomer;
+  skill?: {
+    id: string | number;
+    name: string;
+    proficiencyLevel?: string | number;
+  };
+  customer?: {
+    id: string | number;
+    name: string;
+  };
   metadata?: any;
   description?: string;
   entity_type?: string;
   entity_id?: string | number;
-  targetUser?: TimelineUser;
-  entityType?: string;
-  entityId?: string | number;
   
   // Original data from the database (for backward compatibility)
   original?: {
