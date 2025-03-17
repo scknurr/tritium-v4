@@ -85,10 +85,10 @@ async function getEntityName(type: string, id: string | number): Promise<string>
       case 'profiles': {
         const { data } = await supabase
           .from('profiles')
-          .select('full_name, email')
+          .select('first_name, last_name, email')
           .eq('id', id)
           .single();
-        return data?.full_name || data?.email || String(id);
+        return data ? `${data.first_name} ${data.last_name}`.trim() || data.email || String(id) : String(id);
       }
       case 'customers': {
         const { data } = await supabase
@@ -119,10 +119,10 @@ async function getUserName(userId: string): Promise<string> {
   try {
     const { data } = await supabase
       .from('profiles')
-      .select('full_name, email')
+      .select('first_name, last_name, email')
       .eq('id', userId)
       .single();
-    return data?.full_name || data?.email || userId;
+    return data ? `${data.first_name} ${data.last_name}`.trim() || data.email || userId : userId;
   } catch (error) {
     console.error('Error getting user name:', error);
     return userId;
@@ -133,7 +133,9 @@ function formatValue(value: any): string {
   if (value === null || value === undefined) return 'empty';
   if (typeof value === 'object') {
     if ('name' in value) return value.name;
-    if ('full_name' in value) return value.full_name;
+    if ('first_name' in value && 'last_name' in value) {
+      return `${value.first_name} ${value.last_name}`.trim();
+    }
     return JSON.stringify(value);
   }
   return String(value);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Label, Select, TextInput } from 'flowbite-react';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
 import type { Profile, Customer, CustomerRole } from '../../types';
+import { formatFullName } from '../../lib/utils';
 
 interface CustomerUserFormProps {
   userId?: string;
@@ -60,7 +61,7 @@ export function CustomerUserForm({
   }, [editData, userId, customerId, today]);
 
   const { data: users } = useSupabaseQuery<Profile>('profiles', {
-    orderBy: { column: 'full_name', ascending: true }
+    orderBy: { column: 'first_name', ascending: true }
   });
 
   const { data: customers } = useSupabaseQuery<Customer>('customers', {
@@ -91,6 +92,11 @@ export function CustomerUserForm({
     return true;
   };
 
+  // Type guard to ensure string is not undefined
+  const ensureString = (value: string | undefined, defaultValue: string): string => {
+    return value || defaultValue;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -98,12 +104,19 @@ export function CustomerUserForm({
       return;
     }
 
+    // Make sure we have valid values
+    if (!formData.user_id || !formData.customer_id || !formData.role_id || !formData.start_date) {
+      setError('Missing required fields');
+      return;
+    }
+
     setLoading(true);
     try {
       await onSubmit({
-        ...formData,
+        user_id: formData.user_id,
         customer_id: Number(formData.customer_id),
         role_id: Number(formData.role_id),
+        start_date: formData.start_date,
         end_date: formData.end_date || undefined
       });
       onClose();
@@ -140,7 +153,7 @@ export function CustomerUserForm({
                 <option value="">Select a user</option>
                 {users.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {user.full_name || user.email}
+                    {formatFullName(user.first_name, user.last_name, user.email)}
                   </option>
                 ))}
               </Select>

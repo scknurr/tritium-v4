@@ -1,0 +1,15 @@
+# .gitignore-ai
+# Special .gitignore file for AI assistant-related files
+# This ensures our AI context is version controlled while excluding AI-specific temp files
+
+# Include these directories in git (negate standard exclusions)
+!.ai-context/
+!.ai-context/**
+!docs/load-context.js
+!DEVELOPER_NOTES.md
+!context.json
+
+# Exclude AI-specific temp files and logs
+.ai-cache/
+ai-session-*.log
+.ai-history/ 

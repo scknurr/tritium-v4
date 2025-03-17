@@ -9,7 +9,13 @@ import {
 } from '@tanstack/react-table';
 import { Table, Spinner } from 'flowbite-react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { EntityLink } from './EntityLink';
+
+// Declare TableMeta interface to fix type issues
+export interface TableMeta<T> {
+  onEdit?: (entity: T) => void;
+  onView?: (entity: T) => void;
+}
 
 interface DataTableProps<T> {
   data: T[];
@@ -17,12 +23,10 @@ interface DataTableProps<T> {
   loading?: boolean;
   error?: string | null;
   entityType: string;
-  meta?: {
-    onEdit?: (entity: T) => void;
-  };
+  meta?: TableMeta<T>;
 }
 
-export function DataTable<T extends { id: string | number }>({
+export function DataTable<T extends { id: string | number, name?: string }>({
   data,
   columns,
   loading = false,
@@ -31,6 +35,23 @@ export function DataTable<T extends { id: string | number }>({
   meta,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+
+  // Convert entityType (plural) to entity type (singular) for EntityLink
+  const getEntityType = (type: string): 'user' | 'customer' | 'skill' | 'application' | 'role' => {
+    if (type === 'users' || type === 'profiles') return 'user';
+    if (type === 'customers') return 'customer';
+    if (type === 'skills') return 'skill';
+    if (type === 'applications') return 'application';
+    if (type === 'roles') return 'role';
+    // Default fallback
+    return 'user';
+  };
+
+  const handleRowClick = (row: T) => {
+    if (meta?.onView) {
+      meta.onView(row);
+    }
+  };
 
   const table = useReactTable({
     data,
@@ -58,13 +79,14 @@ export function DataTable<T extends { id: string | number }>({
     );
   }
 
-  const headerGroup = table.getHeaderGroups()[0];
+  const headerGroups = table.getHeaderGroups();
+  const headerGroup = headerGroups.length > 0 ? headerGroups[0] : undefined;
 
   return (
     <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
       <Table hoverable>
         <Table.Head>
-          {headerGroup.headers.map((header) => {
+          {headerGroup && headerGroup.headers.map((header) => {
             const canSort = header.column.getCanSort();
             const isSorted = header.column.getIsSorted();
 
@@ -100,19 +122,22 @@ export function DataTable<T extends { id: string | number }>({
 
         <Table.Body className="divide-y">
           {table.getRowModel().rows.map((row) => (
-            <Table.Row key={row.id} className="bg-white dark:bg-gray-800">
+            <Table.Row 
+              key={row.id} 
+              className="bg-white dark:bg-gray-800 cursor-pointer"
+              onClick={() => meta?.onView && handleRowClick(row.original)}
+            >
               {row.getVisibleCells().map((cell, cellIndex) => {
                 const cellContent = flexRender(cell.column.columnDef.cell, cell.getContext());
 
                 return (
                   <Table.Cell key={cell.id} className="whitespace-nowrap px-4 py-3">
                     {cellIndex === 0 ? (
-                      <Link
-                        to={`/${entityType}/${row.original.id}`}
-                        className="text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        {cellContent}
-                      </Link>
+                      <EntityLink
+                        type={getEntityType(entityType)}
+                        id={row.original.id}
+                        name={typeof cellContent === 'string' ? cellContent : row.original.name || 'Unknown'}
+                      />
                     ) : (
                       cellContent
                     )}

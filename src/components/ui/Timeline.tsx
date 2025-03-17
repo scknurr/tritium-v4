@@ -82,7 +82,8 @@ const logger = createLogger('Timeline');
 // Define interfaces we need for type safety
 interface Profile {
   id: string;
-  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
 }
 
@@ -144,6 +145,37 @@ function formatChange(change: { field: string; oldValue: any; newValue: any }): 
     
     if (typeof value === 'object') {
       try {
+        // Handle arrays
+        if (Array.isArray(value)) {
+          if (value.length === 0) return 'None';
+          
+          // Check if array contains objects
+          if (typeof value[0] === 'object' && value[0] !== null) {
+            // Try to extract names from objects
+            const names = value
+              .map(item => {
+                if (item?.name) return item.name;
+                if (item?.title) return item.title;
+                if (item?.first_name && item?.last_name) {
+                  return `${item.first_name} ${item.last_name}`.trim();
+                }
+                return null;
+              })
+              .filter(Boolean);
+            
+            if (names.length > 0) {
+              return names.join(', ');
+            }
+          }
+          
+          // Just show number of items if many
+          if (value.length > 3) {
+            return `${value.length} items`;
+          }
+          
+          return value.map(v => String(v)).join(', ');
+        }
+        
         // Try to extract the name field for common entities
         if (value && value.name) {
           return value.name;
@@ -151,10 +183,17 @@ function formatChange(change: { field: string; oldValue: any; newValue: any }): 
         
         // If there's no name field but it has an id and other fields, it's likely an entity
         if (value && value.id && Object.keys(value).length > 1) {
-          if (value.full_name) return value.full_name;
+          if (value.first_name && value.last_name) {
+            return `${value.first_name} ${value.last_name}`.trim();
+          }
           if (value.email) return value.email;
           if (value.title) return value.title;
           if (value.description) return value.description;
+        }
+        
+        // For categories or industries
+        if (value && (value.category_name || value.industry_name)) {
+          return value.category_name || value.industry_name;
         }
         
         // If it's an empty object, return None
@@ -162,14 +201,10 @@ function formatChange(change: { field: string; oldValue: any; newValue: any }): 
           return 'None';
         }
         
-        // Last resort - stringify the object but limit its length
-        const stringified = JSON.stringify(value);
-        if (stringified.length > 50) {
-          return stringified.substring(0, 47) + '...';
-        }
-        return stringified;
-      } catch (e) {
-        return String(value);
+        return JSON.stringify(value);
+      } catch (error) {
+        console.error('Error formatting value:', error);
+        return 'Error formatting value';
       }
     }
     
@@ -704,7 +739,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, full_name, email'
+      select: 'id, first_name, last_name, email'
     }
   );
 
@@ -728,7 +763,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, full_name, email'
+      select: 'id, first_name, last_name, email'
     }
   );
 
@@ -743,7 +778,7 @@ export function Timeline({
     queryKeys.profiles.list(),
     'profiles',
     {
-      select: 'id, full_name, email'
+      select: 'id, first_name, last_name, email'
     }
   );
   
@@ -777,7 +812,8 @@ export function Timeline({
     if (!profilesMap.has(stevenKnurrId)) {
       profilesMap.set(stevenKnurrId, {
         id: stevenKnurrId,
-        full_name: 'Steven Knurr',
+        first_name: 'Steven',
+        last_name: 'Knurr',
         email: 'user@example.com'
       });
     }
@@ -811,7 +847,8 @@ export function Timeline({
     if (id === 'bcea8f7d-e362-4a93-9595-1ec04a26a30f') {
       return {
         id: id,
-        full_name: 'Steven Knurr',
+        first_name: 'Steven',
+        last_name: 'Knurr',
         email: 'user@example.com'
       };
     }
@@ -874,7 +911,7 @@ export function Timeline({
     switch (type) {
       case 'profiles': {
         const profile = findProfileById(id, getAllProfiles);
-        return profile?.full_name || profile?.email || id;
+        return profile?.first_name && profile?.last_name ? `${profile.first_name} ${profile.last_name}` : profile?.email || id;
       }
       case 'customers': {
         const customer = customers.find(c => String(c.id) === id);
@@ -891,7 +928,7 @@ export function Timeline({
 
   const getActorDisplayName = (userId: string): string => {
     const profile = getAllProfiles.find((p) => p.id === userId);
-    return profile?.full_name || profile?.email || 'User';
+    return profile?.first_name && profile?.last_name ? `${profile.first_name} ${profile.last_name}` : profile?.email || 'User';
   };
 
   // Helper function to get role name by ID
@@ -930,7 +967,12 @@ export function Timeline({
     const isSkillApplication = 
       item.entity_type === 'skill_applications' || 
       (item.description && item.description.toLowerCase().includes('applied') && 
-       item.description.toLowerCase().includes('at'));
+       item.description.toLowerCase().includes('at')) ||
+      // Additional checks to catch events from ApplySkillButton
+      (item.metadata && 
+        typeof item.metadata === 'object' && 
+        item.metadata.skill_name && 
+        item.metadata.customer_name);
     
     if (isSkillApplication) {
       console.log('Detected skill application:', item);
@@ -997,34 +1039,34 @@ export function Timeline({
         customerName, 
         metadata 
       });
-      
-      return (
-        <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
-          <div className="flex flex-col">
+          
+          return (
+            <div className="text-base font-normal text-gray-600 dark:text-gray-300 my-1">
+              <div className="flex flex-col">
             <span className="flex items-center gap-1 flex-wrap">
-              <Users className="w-4 h-4 text-blue-500" />
-              <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
-                {actorName}
-              </Link>
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <Link to={actorLink} className="text-blue-500 hover:underline font-medium">
+                    {actorName}
+                  </Link>
               <span>{message}</span>
               <GraduationCap className="w-4 h-4 text-purple-500" />
               {skillId ? (
                 <Link to={`/skills/${skillId}`} className="text-purple-500 hover:underline font-medium inline-flex items-center">
                   <span>{skillName}</span>
-                </Link>
+                  </Link>
               ) : (
                 <span className="text-purple-500 font-medium inline-flex items-center">{skillName}</span>
               )}
               <span>at</span>
-              <Building className="w-4 h-4 text-green-500" />
+                  <Building className="w-4 h-4 text-green-500" />
               {customerId ? (
                 <Link to={`/customers/${customerId}`} className="text-green-500 hover:underline font-medium inline-flex items-center">
                   <span>{customerName}</span>
-                </Link>
+                  </Link>
               ) : (
                 <span className="text-green-500 font-medium inline-flex items-center">{customerName}</span>
               )}
-            </span>
+                </span>
             <div className="text-xs text-gray-600 mt-1 ml-6">
               {proficiency && (
                 <span className="font-medium">
@@ -1037,14 +1079,14 @@ export function Timeline({
                   Notes: {notes}
                 </span>
               )}
-            </div>
+                  </div>
             <div className="text-xs text-gray-400 mt-1 ml-6">
               {formatTimeAgo(item.event_time)}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      );
-    }
+          );
+        }
 
     // Detect skill application from simple check - this is a fallback
     if (
@@ -1113,18 +1155,18 @@ export function Timeline({
               ) : (
                 <span className="text-green-500 font-medium inline-flex items-center">{customerName}</span>
               )}
-            </span>
+              </span>
             <div className="text-xs text-gray-600 mt-1 ml-6">
               {proficiency && (
                 <span className="font-medium">
                   Proficiency: {formatProficiencyLevel(proficiency)}
-                </span>
+            </span>
               )}
               {notes && proficiency && <span className="mx-1">•</span>}
               {notes && (
                 <span>
                   Notes: {notes}
-                </span>
+            </span>
               )}
             </div>
             <div className="text-xs text-gray-400 mt-1 ml-6">
@@ -1140,7 +1182,7 @@ export function Timeline({
     const entityColor = getEntityColor(item.entity_type);
     const entityName = getEntityName(item.entity_type, item.entity_id);
     const entityLink = getEntityLink(item.entity_type, item.entity_id);
-
+    
     // Format all changes in a consistent way to show as subtext
     const formattedChanges = item.changes?.map(change => {
       // Helper function to format any value consistently
@@ -1155,6 +1197,37 @@ export function Timeline({
         
         if (typeof value === 'object') {
           try {
+            // Handle arrays
+            if (Array.isArray(value)) {
+              if (value.length === 0) return 'None';
+              
+              // Check if array contains objects
+              if (typeof value[0] === 'object' && value[0] !== null) {
+                // Try to extract names from objects
+                const names = value
+                  .map(item => {
+                    if (item?.name) return item.name;
+                    if (item?.title) return item.title;
+                    if (item?.first_name && item?.last_name) {
+                      return `${item.first_name} ${item.last_name}`.trim();
+                    }
+                    return null;
+                  })
+                  .filter(Boolean);
+                
+                if (names.length > 0) {
+                  return names.join(', ');
+                }
+              }
+              
+              // Just show number of items if many
+              if (value.length > 3) {
+                return `${value.length} items`;
+              }
+              
+              return value.map(v => String(v)).join(', ');
+            }
+            
             // Try to extract the name field for common entities
             if (value && value.name) {
               return value.name;
@@ -1162,10 +1235,17 @@ export function Timeline({
             
             // If there's no name field but it has an id and other fields, it's likely an entity
             if (value && value.id && Object.keys(value).length > 1) {
-              if (value.full_name) return value.full_name;
+              if (value.first_name && value.last_name) {
+                return `${value.first_name} ${value.last_name}`.trim();
+              }
               if (value.email) return value.email;
               if (value.title) return value.title;
               if (value.description) return value.description;
+            }
+            
+            // For categories or industries
+            if (value && (value.category_name || value.industry_name)) {
+              return value.category_name || value.industry_name;
             }
             
             // If it's an empty object, return None
@@ -1173,14 +1253,10 @@ export function Timeline({
               return 'None';
             }
             
-            // Last resort - stringify the object but limit its length
-            const stringified = JSON.stringify(value);
-            if (stringified.length > 50) {
-              return stringified.substring(0, 47) + '...';
-            }
-            return stringified;
-          } catch (e) {
-            return String(value);
+            return JSON.stringify(value);
+          } catch (error) {
+            console.error('Error formatting value:', error);
+            return 'Error formatting value';
           }
         }
         
@@ -1375,31 +1451,31 @@ export function Timeline({
         } else if (entityName && entityName !== item.entity_id) {
           // If entity name differs from ID, use that (could be a resolved name)
           skillName = entityName;
-        } else {
-          // Look up the skill from skill data using either entity_id or by searching changes
-          for (const skill of skills) {
-            if (String(skill.id) === item.entity_id) {
-              skillName = skill.name;
-              break;
+          } else {
+            // Look up the skill from skill data using either entity_id or by searching changes
+            for (const skill of skills) {
+              if (String(skill.id) === item.entity_id) {
+                skillName = skill.name;
+                break;
+              }
             }
-          }
-          
-          // If still no skill name, try to find it in any related data
-          if (!skillName && item.changes) {
-            for (const change of item.changes) {
-              if (change.field === 'skill_id') {
-                const relatedSkill = skills.find(s => String(s.id) === String(change.newValue || change.oldValue));
-                if (relatedSkill) {
-                  skillName = relatedSkill.name;
-                  break;
+            
+            // If still no skill name, try to find it in any related data
+            if (!skillName && item.changes) {
+              for (const change of item.changes) {
+                if (change.field === 'skill_id') {
+                  const relatedSkill = skills.find(s => String(s.id) === String(change.newValue || change.oldValue));
+                  if (relatedSkill) {
+                    skillName = relatedSkill.name;
+                    break;
+                  }
                 }
               }
             }
-          }
-          
-          // Use a default if still not found
-          if (!skillName) {
-            skillName = 'Skill';  // Default fallback
+            
+            // Use a default if still not found
+            if (!skillName) {
+              skillName = 'Skill';  // Default fallback
           }
         }
       }
@@ -1645,9 +1721,9 @@ export function Timeline({
                   !change.toLowerCase().match(/\b(id|_id)\b/i)
                 )
                 .map((change, index) => (
-                  <div key={index} className="text-gray-500 dark:text-gray-400">
-                    {change}
-                  </div>
+                <div key={index} className="text-gray-500 dark:text-gray-400">
+                  {change}
+                </div>
                 ))
               }
             </div>

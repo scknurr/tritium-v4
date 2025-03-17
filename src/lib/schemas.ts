@@ -9,7 +9,8 @@ const urlSchema = z.string().url().optional().nullable();
 // Profile schema
 export const profileSchema = z.object({
   id: z.string(),
-  full_name: z.string().min(1, 'Name is required'),
+  first_name: z.string().min(1, 'First name is required'),
+  last_name: z.string().min(1, 'Last name is required'),
   email: emailSchema,
   title: z.string().optional().nullable(),
   bio: z.string().optional().nullable(),
@@ -69,7 +70,8 @@ export const customerSkillSchema = z.object({
 
 // Form schemas
 export const profileFormSchema = profileSchema.pick({
-  full_name: true,
+  first_name: true,
+  last_name: true,
   email: true,
   title: true,
   bio: true

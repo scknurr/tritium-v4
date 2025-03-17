@@ -10,6 +10,7 @@ import { queryKeys } from '../../lib/queryKeys';
 import type { LucideIcon } from 'lucide-react';
 import type { RelationshipType } from '../ui/RelatedEntities';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRealtimeSubscription } from '../../hooks/useRealtimeSubscription';
 
 // Define the RelatedEntity interface here so we don't need to import it
 interface RelatedEntity {
@@ -36,10 +37,14 @@ interface EntityDetailProps {
   entityType: 'profiles' | 'customers' | 'skills';
   entityId: string | number;
   title: string;
+  subtitle?: string;
   icon: LucideIcon;
   form: React.ReactNode;
   mainContent: React.ReactNode;
   description?: string;
+  imageUrl?: string;
+  onImageUpload?: (file: File) => Promise<void>;
+  tags?: Array<{label: string; color?: string}>;
   relatedEntities: {
     title: string;
     icon: LucideIcon;
@@ -53,21 +58,56 @@ interface EntityDetailProps {
     entityName: string;
     relatedDataDescription: string;
   };
+  hideOldTimeline?: boolean; // Added parameter to control visibility of old timeline
 }
 
 export function EntityDetail({
   entityType,
   entityId,
   title,
+  subtitle,
   icon: Icon,
   form,
   mainContent,
   description,
+  imageUrl,
+  onImageUpload,
+  tags = [],
   relatedEntities,
   onRefresh,
-  deleteInfo
+  deleteInfo,
+  hideOldTimeline = false // Default to showing old timeline for backward compatibility
 }: EntityDetailProps) {
   const queryClient = useQueryClient();
+
+  // Set up real-time subscription to the entity table
+  useRealtimeSubscription({
+    table: entityType,
+    filter: { id: entityId },
+    onUpdate: async () => {
+      // Invalidate entity query when data changes
+      await queryClient.invalidateQueries({
+        queryKey: [entityType, 'detail', entityId]
+      });
+      // Call onRefresh to update the entity data
+      await onRefresh();
+    }
+  });
+
+  // Set up real-time subscription to audit_logs for this entity
+  useRealtimeSubscription({
+    table: 'audit_logs',
+    filter: { 
+      entity_type: entityType,
+      entity_id: entityId
+    },
+    onUpdate: async () => {
+      // Invalidate audit logs query when data changes
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.audit.list(entityType, entityId)
+      });
+    }
+  });
 
   const handleTimelineUpdate = React.useCallback(async () => {
     // Invalidate both the entity and audit log queries
@@ -113,53 +153,74 @@ export function EntityDetail({
       } as any) // Using any to bypass type checking for the cloned element props
     : null;
 
+  // Translate entityType to the EntityHeader format
+  const getEntityHeaderType = (): 'user' | 'customer' | 'skill' => {
+    switch(entityType) {
+      case 'profiles': return 'user';
+      case 'customers': return 'customer';
+      case 'skills': return 'skill';
+      default: return 'user';
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <div className="space-y-4">
-          <EntityHeader
-            title={title}
-            onEdit={() => setIsFormOpen(true)}
-            onDelete={() => setIsDeleteModalOpen(true)}
-          />
-          {description && (
-            <div className="mt-2 text-gray-600 dark:text-gray-300">
-              <p>{description}</p>
-            </div>
-          )}
+    <div className="space-y-8">
+      <Card className="overflow-visible">
+        <EntityHeader
+          title={title}
+          subtitle={subtitle}
+          description={description}
+          onEdit={() => setIsFormOpen(true)}
+          onDelete={() => setIsDeleteModalOpen(true)}
+          entityType={getEntityHeaderType()}
+          imageUrl={imageUrl}
+          onImageUpload={onImageUpload}
+          tags={tags}
+        />
+        
+        <div className="mt-8">
           {mainContent}
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          {relatedEntities.map((related, index) => (
-            <RelatedEntities
-              key={index}
-              title={related.title}
-              icon={related.icon}
-              entities={related.entities}
-              loading={related.loading}
-              type={related.type}
-              userId={entityType === 'profiles' ? entityId as string : undefined}
-              customerId={entityType === 'customers' ? entityId as number : undefined}
-              skillId={entityType === 'skills' ? entityId as number : undefined}
-              onUpdate={related.onUpdate}
-            />
-          ))}
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Related entities column - takes up 1/3 of the space on large screens */}
+        {relatedEntities.length > 0 && (
+          <div className="lg:col-span-1 space-y-6">
+            {relatedEntities.map((related, index) => (
+              <RelatedEntities
+                key={index}
+                title={related.title}
+                icon={related.icon}
+                entities={related.entities}
+                loading={related.loading}
+                type={related.type}
+                userId={entityType === 'profiles' ? entityId as string : undefined}
+                customerId={entityType === 'customers' ? entityId as number : undefined}
+                skillId={entityType === 'skills' ? entityId as number : undefined}
+                onUpdate={related.onUpdate}
+              />
+            ))}
+          </div>
+        )}
 
-        <Card>
-          <Timeline
-            title="Activity Timeline"
-            icon={Icon}
-            items={timeline as TimelineItem[]}
-            loading={timelineLoading}
-            entityType={entityType}
-            entityId={entityId}
-            onUpdate={handleTimelineUpdate}
-          />
-        </Card>
+        {/* Main timeline or content column - takes up 2/3 of the space on large screens */}
+        <div className={`lg:col-span-${relatedEntities.length > 0 ? '2' : '3'}`}>
+          {/* Only render the old Timeline component if hideOldTimeline is false */}
+          {!hideOldTimeline && (
+            <Card>
+              <Timeline
+                title="Activity Timeline"
+                icon={Icon}
+                items={timeline as unknown as TimelineItem[]}
+                loading={timelineLoading}
+                entityType={entityType}
+                entityId={entityId}
+                onUpdate={handleTimelineUpdate}
+              />
+            </Card>
+          )}
+        </div>
       </div>
 
       {formElement}

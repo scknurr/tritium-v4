@@ -31,14 +31,14 @@ export function useFilteredData<T>({
           // Name filters
           case 'name_asc':
             if (table === 'profiles') {
-              query = query.order('full_name', { ascending: true });
+              query = query.order('first_name', { ascending: true });
             } else {
               query = query.order('name', { ascending: true });
             }
             break;
           case 'name_desc':
             if (table === 'profiles') {
-              query = query.order('full_name', { ascending: false });
+              query = query.order('first_name', { ascending: false });
             } else {
               query = query.order('name', { ascending: false });
             }

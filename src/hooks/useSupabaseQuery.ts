@@ -1,13 +1,58 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import type { TableState } from '../types';
 
+/**
+ * Standard table state interface
+ */
+export interface TableState<T> {
+  data: T[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Query options for the useSupabaseQuery hook
+ */
 type QueryOptions = {
+  /**
+   * Columns to select, including foreign key relationships.
+   * For joins, use the format "relatedTable:foreignKeyColumn(columns)".
+   * Example: "*, category:category_id(id, name)"
+   */
   select?: string;
+  /**
+   * Column to order by and direction
+   */
   orderBy?: { column: string; ascending?: boolean };
+  /**
+   * Filter criteria. For single value use eq, for array values use in
+   */
   filter?: { column: string; value: any };
 } | null;
 
+/**
+ * Standardized hook for querying Supabase tables
+ * 
+ * @param table The table name to query
+ * @param options Query options including select, orderBy, and filter
+ * @returns Table state with data, loading status, error, and refresh function
+ * 
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const { data, loading, error } = useSupabaseQuery('skills', {
+ *   select: '*, category:category_id(id, name)',
+ *   filter: { column: 'id', value: id }
+ * });
+ * 
+ * // With ordering
+ * const { data, loading, error } = useSupabaseQuery('customers', {
+ *   select: '*',
+ *   orderBy: { column: 'name', ascending: true }
+ * });
+ * ```
+ */
 export function useSupabaseQuery<T>(
   table: string,
   options: QueryOptions = null
@@ -16,28 +61,36 @@ export function useSupabaseQuery<T>(
     data: [],
     loading: Boolean(options),
     error: null,
+    refresh: async () => { /* Empty initial implementation */ }
   });
 
   // Use refs to store the previous values for comparison
   const prevOptionsRef = useRef<string>();
   const currentOptionsString = JSON.stringify(options);
 
-  const fetchData = async () => {
+  /**
+   * Executes the query against Supabase with proper error handling
+   */
+  const fetchData = async (): Promise<void> => {
     if (!options) {
-      setState({ data: [], loading: false, error: null });
+      setState(prev => ({ ...prev, data: [], loading: false, error: null }));
       return;
     }
 
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
+      
+      // Create the base query with select clause
       let query = supabase.from(table).select(options.select || '*');
 
+      // Add ordering if specified
       if (options.orderBy) {
         query = query.order(options.orderBy.column, {
           ascending: options.orderBy.ascending ?? false,
         });
       }
 
+      // Add filtering if specified
       if (options.filter) {
         const { column, value } = options.filter;
         
@@ -49,11 +102,23 @@ export function useSupabaseQuery<T>(
         }
       }
 
+      // Execute the query
       const { data, error } = await query;
 
-      if (error) throw error;
-      setState({ data: data || [], loading: false, error: null });
+      if (error) {
+        console.error(`useSupabaseQuery error for ${table}:`, error);
+        throw error;
+      }
+      
+      // Use type assertion to ensure compatibility
+      setState(prev => ({ 
+        ...prev, 
+        data: (data || []) as T[], 
+        loading: false, 
+        error: null 
+      }));
     } catch (err) {
+      console.error(`useSupabaseQuery error for ${table}:`, err);
       setState(prev => ({
         ...prev,
         loading: false,
@@ -62,6 +127,7 @@ export function useSupabaseQuery<T>(
     }
   };
 
+  // Effect to fetch data when options change
   useEffect(() => {
     // Only fetch if the options have actually changed
     if (prevOptionsRef.current !== currentOptionsString) {
@@ -70,8 +136,14 @@ export function useSupabaseQuery<T>(
     }
   }, [table, currentOptionsString]);
 
+  // Create a stable reference to the refresh function
+  const stableRefresh = useCallback(fetchData, [table, currentOptionsString]);
+
+  // Always return a consistent object with the refresh function defined
   return {
-    ...state,
-    refresh: fetchData,
+    data: state.data,
+    loading: state.loading,
+    error: state.error,
+    refresh: stableRefresh
   };
 }

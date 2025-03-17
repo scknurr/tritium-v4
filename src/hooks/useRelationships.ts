@@ -42,13 +42,13 @@ export function useRelationships({
         if (userId) {
           const { data: user } = await supabase
             .from('profiles')
-            .select('id, full_name, email')
+            .select('id, first_name, last_name, email')
             .eq('id', userId)
             .single();
           return {
             entityType: ENTITY_TYPES.USERS,
             entityId: userId,
-            entityName: user?.full_name || user?.email || 'Unknown User',
+            entityName: user?.first_name + ' ' + user?.last_name || user?.email || 'Unknown User',
             relatedEntityType: ENTITY_TYPES.CUSTOMERS
           };
         } else {
@@ -69,13 +69,13 @@ export function useRelationships({
         if (userId) {
           const { data: user } = await supabase
             .from('profiles')
-            .select('id, full_name, email')
+            .select('id, first_name, last_name, email')
             .eq('id', userId)
             .single();
           return {
             entityType: ENTITY_TYPES.USERS,
             entityId: userId,
-            entityName: user?.full_name || user?.email || 'Unknown User',
+            entityName: user?.first_name + ' ' + user?.last_name || user?.email || 'Unknown User',
             relatedEntityType: ENTITY_TYPES.SKILLS
           };
         } else {
@@ -140,12 +140,12 @@ export function useRelationships({
         } else {
           const { data: user } = await supabase
             .from('profiles')
-            .select('id, full_name, email')
+            .select('id, first_name, last_name, email')
             .eq('id', data.user_id)
             .single();
           return {
             entityId: user?.id,
-            entityName: user?.full_name || user?.email || 'Unknown User'
+            entityName: user?.first_name + ' ' + user?.last_name || user?.email || 'Unknown User'
           };
         }
       }
@@ -163,12 +163,12 @@ export function useRelationships({
         } else {
           const { data: user } = await supabase
             .from('profiles')
-            .select('id, full_name, email')
+            .select('id, first_name, last_name, email')
             .eq('id', data.user_id)
             .single();
           return {
             entityId: user?.id,
-            entityName: user?.full_name || user?.email || 'Unknown User'
+            entityName: user?.first_name + ' ' + user?.last_name || user?.email || 'Unknown User'
           };
         }
       }

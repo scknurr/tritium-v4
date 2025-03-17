@@ -1,0 +1,18 @@
+{
+  "sessionId": "1741889313134",
+  "repoName": "tritium-v4",
+  "timestamp": "2025-03-13T18:08:33.134Z",
+  "loadedFiles": [
+    "00_LOAD_FIRST.md",
+    "01_TYPE_REFERENCE.md",
+    "02_HOOKS_AND_FUNCTIONS.md",
+    "03_DATABASE_SCHEMA.md",
+    "04_COMPONENT_REFERENCE.md",
+    "05_KNOWN_ISSUES.md",
+    "06_CURRENT_TASKS.md",
+    "07_INSIGHTS.md",
+    "DEVELOPER_NOTES.md",
+    "context.json",
+    "README.md"
+  ]
+}

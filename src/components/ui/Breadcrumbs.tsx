@@ -3,6 +3,7 @@ import { useLocation, Link, useParams } from 'react-router-dom';
 import { ChevronRight, Home } from 'lucide-react';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
 import type { Customer, Profile, Skill } from '../../types';
+import { formatFullName } from '@/lib/utils';
 
 export function Breadcrumbs() {
   const location = useLocation();
@@ -46,7 +47,9 @@ export function Breadcrumbs() {
         if (path === params.id) {
           switch (paths[0]) {
             case 'users':
-              entityName = profiles?.[0]?.full_name || profiles?.[0]?.email || params.id;
+              entityName = profiles?.[0] ? 
+                formatFullName(profiles[0].first_name, profiles[0].last_name, profiles[0].email) : 
+                params.id;
               break;
             case 'customers':
               entityName = customers?.[0]?.name || params.id;

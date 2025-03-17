@@ -1,25 +1,34 @@
-import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Avatar } from 'flowbite-react';
-import { Users, Building, GraduationCap, Mail, Briefcase, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Mail, Briefcase, Building, GraduationCap, Clock, Users, Calendar, Star } from 'lucide-react';
 import { EntityDetail } from '../../components/ui/EntityDetail';
 import { UserForm } from '../../components/forms/UserForm';
 import { useSupabaseQuery } from '../../hooks/useSupabaseQuery';
 import { useMutationWithCache } from '../../lib/hooks/useMutationWithCache';
 import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
-import type { Customer, Skill, SkillApplication } from '../../types';
-import { queryKeys } from '../../lib/queryKeys';
+import { DetailCard } from '../../components/ui/DetailCard';
+import { EntityDetailItem } from '../../components/ui/EntityDetailItem';
 import { supabase } from '../../lib/supabase';
-import { Link } from 'react-router-dom';
+import { queryKeys } from '../../lib/queryKeys';
 import ApplySkillButton from '../../components/ApplySkillButton';
+import UserAppliedSkills from '../../components/UserAppliedSkills';
+import { useUnifiedTimeline } from '../../lib/useUnifiedTimeline';
+import { UnifiedTimeline } from '../../components/ui/UnifiedTimeline';
+import { useToast } from '../../lib/hooks/useToast';
+import { Profile } from '../../types';
+import { EntityLink } from '../../components/ui/EntityLink';
+import { Button } from 'flowbite-react';
 
-interface Profile {
-  id: string;
-  full_name: string | null;
-  email: string;
-  bio?: string | null;
-  title?: string | null;
-  created_at: string;
+// Type definitions for users, skills, and customer relationships
+interface UserSkill {
+  id: number;
+  user_id: string;
+  skill_id: number;
+  proficiency_level: string;
+  skill: {
+    id: number;
+    name: string;
+  };
 }
 
 interface UserCustomer {
@@ -29,15 +38,10 @@ interface UserCustomer {
   role_id: number;
   start_date: string;
   end_date?: string | null;
-  customer: Customer;
-}
-
-interface UserSkill {
-  id: number;
-  user_id: string;
-  skill_id: number;
-  proficiency_level: string;
-  skill: Skill;
+  customer: {
+    id: number;
+    name: string;
+  };
 }
 
 interface SimpleSkill {
@@ -55,472 +59,401 @@ interface SimpleRole {
   name: string;
 }
 
-// Simple component to display user skill applications
-const UserSkillApplicationsList = ({ userId, refreshTrigger = 0, onRefresh }: { userId: string, refreshTrigger?: number, onRefresh?: () => void }) => {
-  const [applications, setApplications] = React.useState<SkillApplication[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [isArchiving, setIsArchiving] = React.useState<number | null>(null);
-
-  React.useEffect(() => {
-    const fetchApplications = async () => {
-      setIsLoading(true);
-      try {
-        // Fetch latest skill applications data
-        const { data, error } = await supabase
-          .from('skill_applications')
-          .select(`
-            id, 
-            user_id, 
-            skill_id, 
-            customer_id, 
-            proficiency, 
-            start_date, 
-            end_date, 
-            notes, 
-            created_at,
-            updated_at,
-            skills:skill_id(name),
-            customers:customer_id(name)
-          `)
-          .eq('user_id', userId)
-          .order('end_date', { ascending: true, nullsFirst: false })  // Show active applications first
-          .order('created_at', { ascending: false });  // Then most recent applications first
-        
-        if (error) throw error;
-        
-        // Format the data to match the expected SkillApplication structure
-        const formattedData = data?.map(app => ({
-          ...app,
-          skill_name: app.skills ? (app.skills as any).name : 'Unknown Skill',
-          customer_name: app.customers ? (app.customers as any).name : 'Unknown Customer'
-        })) || [];
-        
-        setApplications(formattedData);
-      } catch (error) {
-        console.error('Error fetching skill applications:', error);
-        setApplications([]); // Ensure we always have an array
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchApplications();
-  }, [userId, refreshTrigger]);
-
-  const endApplication = async (applicationId: number) => {
-    setIsArchiving(applicationId);
-    try {
-      // End the application by setting an end date
-      const today = new Date().toISOString().split('T')[0];
-      const { error } = await supabase
-        .from('skill_applications')
-        .update({ end_date: today })
-        .eq('id', applicationId);
-      
-      if (error) throw error;
-      
-      // Create audit log for ending the application
-      const application = applications.find(app => app.id === applicationId);
-      if (application) {
-        const user = await supabase.auth.getUser();
-        if (user.data.user) {
-          await supabase.from('audit_logs').insert({
-            event_type: 'UPDATE',
-            entity_type: 'skill_applications',
-            entity_id: applicationId,
-            user_id: user.data.user.id,
-            description: `Ended application of ${application.skill_name} at ${application.customer_name}`,
-            metadata: {
-              skill_name: application.skill_name,
-              customer_name: application.customer_name,
-              end_date: today,
-              skill_id: application.skill_id,
-              customer_id: application.customer_id,
-              profile_id: userId,
-              proficiency: application.proficiency,
-              notes: application.notes || null
-            }
-          });
-        }
-      }
-      
-      // Refresh the application list
-      if (onRefresh) onRefresh();
-      
-      // Update the local state to show the change immediately
-      setApplications(prev => prev.map(app => 
-        app.id === applicationId ? { ...app, end_date: today } : app
-      ));
-    } catch (error) {
-      console.error('Error ending skill application:', error);
-    } finally {
-      setIsArchiving(null);
-    }
-  };
-
-  if (isLoading) {
-    return <div className="py-4">Loading skill applications...</div>;
-  }
-
-  // Ensure applications is always an array before mapping
-  const applicationsList = Array.isArray(applications) ? applications : [];
-  
-  // Separate active and historical applications
-  const activeApplications = applicationsList.filter(app => !app.end_date);
-  const historicalApplications = applicationsList.filter(app => app.end_date);
-
-  return (
-    <div>
-      {/* Active Applications */}
-      <h3 className="text-lg font-semibold mb-2">Active Applications</h3>
-      {activeApplications.length === 0 ? (
-        <p className="text-gray-500 mb-6">No active skill applications</p>
-      ) : (
-        <div className="space-y-4 mb-6">
-          {activeApplications.map(app => (
-            <div key={app.id} className="border rounded-lg p-4 shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-medium flex items-center gap-1">
-                    <GraduationCap className="h-4 w-4 text-purple-500" />
-                    <Link to={`/skills/${app.skill_id}`} className="text-purple-500 hover:underline">
-                      {app.skill_name}
-                    </Link>
-                    <span className="text-gray-500">at</span>
-                    <Building className="h-4 w-4 text-green-500" />
-                    <Link to={`/customers/${app.customer_id}`} className="text-green-500 hover:underline">
-                      {app.customer_name}
-                    </Link>
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    <span className="font-semibold">Proficiency:</span> {app.proficiency}
-                  </div>
-                  {app.start_date && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-semibold">Since:</span> {new Date(app.start_date).toLocaleDateString()}
-                    </div>
-                  )}
-                  {app.notes && (
-                    <div className="text-sm text-gray-600 mt-1">
-                      <span className="font-semibold">Notes:</span> {app.notes}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => endApplication(app.id)}
-                  disabled={isArchiving === app.id}
-                  className="text-sm px-3 py-1 border border-red-300 text-red-500 rounded hover:bg-red-50 disabled:opacity-50"
-                >
-                  {isArchiving === app.id ? 'Ending...' : 'End'}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      {/* Historical Applications */}
-      {historicalApplications.length > 0 && (
-        <>
-          <h3 className="text-lg font-semibold mb-2">Historical Applications</h3>
-          <div className="space-y-4">
-            {historicalApplications.map(app => (
-              <div key={app.id} className="border rounded-lg p-4 shadow-sm bg-gray-50">
-                <div className="opacity-70">
-                  <div className="font-medium flex items-center gap-1">
-                    <GraduationCap className="h-4 w-4 text-purple-500" />
-                    <Link to={`/skills/${app.skill_id}`} className="text-purple-500 hover:underline">
-                      {app.skill_name}
-                    </Link>
-                    <span className="text-gray-500">at</span>
-                    <Building className="h-4 w-4 text-green-500" />
-                    <Link to={`/customers/${app.customer_id}`} className="text-green-500 hover:underline">
-                      {app.customer_name}
-                    </Link>
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    <span className="font-semibold">Proficiency:</span> {app.proficiency}
-                  </div>
-                  {app.start_date && app.end_date && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-semibold">Period:</span> {new Date(app.start_date).toLocaleDateString()} - {new Date(app.end_date).toLocaleDateString()}
-                    </div>
-                  )}
-                  {app.notes && (
-                    <div className="text-sm text-gray-600 mt-1">
-                      <span className="font-semibold">Notes:</span> {app.notes}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = React.useState('info');
+  const { success, error: showError } = useToast();
   
-  // Add state for adding skills and customers
-  const [isAddingSkill, setIsAddingSkill] = React.useState(false);
-  const [isAddingCustomer, setIsAddingCustomer] = React.useState(false);
-  const [selectedSkill, setSelectedSkill] = React.useState('');
-  const [selectedCustomer, setSelectedCustomer] = React.useState('');
-  const [selectedRole, setSelectedRole] = React.useState('');
-  const [proficiencyLevel, setProficiencyLevel] = React.useState('Intermediate');
-  const [startDate, setStartDate] = React.useState(
-    new Date().toISOString().split('T')[0]
-  );
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [error, setError] = React.useState('');
+  const [isAddingSkill, setIsAddingSkill] = useState(false);
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState('');
+  const [proficiencyLevel, setProficiencyLevel] = useState('Novice');
+  const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [selectedRole, setSelectedRole] = useState('');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   
-  // Add state for tracking skill application refreshes
-  const [skillApplicationRefreshCount, setSkillApplicationRefreshCount] = React.useState(0);
-  
-  // Function to refresh skill applications
-  const refreshSkillApplications = React.useCallback(() => {
-    // Increment the counter to trigger a refresh
-    setSkillApplicationRefreshCount(prev => prev + 1);
-    
-    // Also refresh the timeline to show the new activity
-    refreshTimelineData();
-  }, []);
-
-  // Redirect if no ID is provided
-  React.useEffect(() => {
-    if (!id) {
-      navigate('/users');
-    }
-  }, [id, navigate]);
-
-  // Don't make any queries if there's no ID
-  if (!id) {
-    return null;
-  }
-
-  const { data: users, loading: loadingUser, refresh: refreshUser } = useSupabaseQuery<Profile>(
+  // Fetch profile data
+  const { data: profiles, loading: loadingProfile, refresh: refreshProfile } = useSupabaseQuery<Profile>(
     'profiles',
-    { filter: { column: 'id', value: id } }
+    {
+      select: '*',
+      filter: { column: 'id', value: id }
+    }
   );
 
-  const { update } = useMutationWithCache<Profile>({
+  // Fetch user's skills
+  const { data: skills, loading: loadingSkills, refresh: refreshSkills } = useSupabaseQuery<UserSkill>(
+    'user_skills',
+    {
+      select: '*, skill:skill_id(*)',
+      filter: { column: 'user_id', value: id }
+    }
+  );
+
+  // Fetch user's customers
+  const { data: customers, loading: loadingCustomers, refresh: refreshCustomers } = useSupabaseQuery<UserCustomer>(
+    'user_customers',
+    {
+      select: '*, customer:customer_id(*)',
+      filter: { column: 'user_id', value: id }
+    }
+  );
+
+  // Fetch available skills to add
+  const { data: availableSkills, loading: loadingAvailableSkills } = useSupabaseQuery<SimpleSkill>(
+    'skills',
+    {
+      select: 'id, name',
+      orderBy: { column: 'name', ascending: true }
+    }
+  );
+
+  // Fetch available customers to add
+  const { data: availableCustomers, loading: loadingAvailableCustomers } = useSupabaseQuery<SimpleCustomer>(
+    'customers',
+    {
+      select: 'id, name',
+      orderBy: { column: 'name', ascending: true }
+    }
+  );
+
+  // Fetch available roles to assign
+  const { data: availableRoles, loading: loadingAvailableRoles } = useSupabaseQuery<SimpleRole>(
+    'customer_roles',
+    {
+      select: 'id, name',
+      orderBy: { column: 'name', ascending: true }
+    }
+  );
+
+  // Mutation for updating profile
+  const { update } = useMutationWithCache({
     table: 'profiles',
     invalidateQueries: [
-      `profiles:detail:${id}`,
-      'profiles:list',
-      `audit:profiles:${id}`
+      'profiles',
+      `profiles:detail:${id}`
     ],
     successMessage: 'Profile updated successfully'
   });
 
-  const { data: customers, loading: loadingCustomers, refresh: refreshCustomers } = useSupabaseQuery<UserCustomer>(
-    'user_customers',
-    {
-      select: '*, customer:customers(*)',
-      filter: { column: 'user_id', value: id }
-    }
-  );
+  // Fetch timeline data
+  const { 
+    events: timelineEvents, 
+    loading: timelineLoading, 
+    error: timelineError,
+    refresh: refreshTimeline 
+  } = useUnifiedTimeline({
+    entityType: 'profiles',
+    entityId: id || '',
+    relatedEntityType: 'user',
+    relatedEntityId: id || '',
+    limit: 50
+  });
 
-  const { data: skills, loading: loadingSkills, refresh: refreshSkills } = useSupabaseQuery<UserSkill>(
-    'user_skills',
-    {
-      select: '*, skill:skills(*)',
-      filter: { column: 'user_id', value: id }
+  // Function to upload profile image
+  const handleImageUpload = async (file: File) => {
+    try {
+      // Create a unique file path using the user ID
+      const filePath = `profile_images/${id}_${Date.now()}.${file.name.split('.').pop()}`;
+      
+      // Upload the file to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+      
+      if (uploadError) {
+        throw uploadError;
+      }
+      
+      // Get the public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('images')
+        .getPublicUrl(filePath);
+      
+      const publicUrl = publicUrlData.publicUrl;
+      
+      // Update the profile with the new avatar URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', id);
+      
+      if (updateError) {
+        throw updateError;
+      }
+      
+      // Refresh the profile data
+      await refreshProfile();
+      setProfileImageUrl(publicUrl);
+      
+      success('Profile image uploaded successfully');
+      
+    } catch (error) {
+      console.error('Error uploading profile image:', error);
+      showError('Failed to upload profile image');
     }
-  );
+  };
 
-  // Add refetch to timeline data to refresh it when skill applications change
-  const { data: timeline = [], isLoading: timelineLoading, refetch: refreshTimelineData } = useQueryWithCache(
-    queryKeys.audit.list('profiles', id),
-    'audit_logs',
-    {
-      filter: { column: 'entity_id', value: id },
-      orderBy: { column: 'event_time', ascending: false }
-    }
-  );
- 
-  // Fetch available skills and customers for dropdowns
-  const { data: availableSkills = [] } = useQueryWithCache<SimpleSkill[]>(
-    queryKeys.skills.list(),
-    'skills',
-    { select: 'id, name' }
-  );
-  
-  const { data: availableCustomers = [] } = useQueryWithCache<SimpleCustomer[]>(
-    queryKeys.customers.list(),
-    'customers',
-    { select: 'id, name' }
-  );
-  
-  const { data: availableRoles = [] } = useQueryWithCache<SimpleRole[]>(
-    ['customer_roles', 'list'],
-    'customer_roles',
-    { select: 'id, name' }
-  );
-  
-  // Handle adding a skill
+  // Add skill to user
   const handleAddSkill = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
     if (!selectedSkill) {
       setError('Please select a skill');
+      setIsSubmitting(false);
       return;
     }
     
-    setIsSubmitting(true);
-    setError('');
-    
     try {
-      const { error: insertError } = await supabase.from('user_skills').insert({
+      const { error } = await supabase.from('user_skills').insert({
         user_id: id,
-        skill_id: parseInt(selectedSkill, 10),
+        skill_id: Number(selectedSkill),
         proficiency_level: proficiencyLevel
       });
       
-      if (insertError) throw insertError;
+      if (error) throw error;
       
-      await refreshSkills();
-      // Also refresh timeline
-      refreshTimelineData();
-      
-      setIsAddingSkill(false);
       setSelectedSkill('');
-      setProficiencyLevel('Intermediate');
+      setProficiencyLevel('Novice');
+      setIsAddingSkill(false);
+      refreshSkills();
+      success('Skill added successfully');
     } catch (err: any) {
-      setError(err.message || 'Failed to add skill');
+      setError(err.message || 'An error occurred');
+      console.error('Error adding skill:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
-  
-  // Handle adding a customer
+
+  // Add customer to user
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
     if (!selectedCustomer) {
       setError('Please select a customer');
+      setIsSubmitting(false);
       return;
     }
     
-    setIsSubmitting(true);
-    setError('');
-    
     try {
-      const { error: insertError } = await supabase.from('user_customers').insert({
+      const { error } = await supabase.from('user_customers').insert({
         user_id: id,
-        customer_id: parseInt(selectedCustomer, 10),
-        role_id: selectedRole ? parseInt(selectedRole, 10) : null,
-        start_date: startDate
+        customer_id: Number(selectedCustomer),
+        role_id: selectedRole ? Number(selectedRole) : null,
+        start_date: startDate,
+        end_date: null // Active assignment
       });
       
-      if (insertError) throw insertError;
+      if (error) throw error;
       
-      await refreshCustomers();
-      // Also refresh timeline
-      refreshTimelineData();
-      
-      setIsAddingCustomer(false);
       setSelectedCustomer('');
       setSelectedRole('');
       setStartDate(new Date().toISOString().split('T')[0]);
+      setIsAddingCustomer(false);
+      refreshCustomers();
+      success('Customer assigned successfully');
     } catch (err: any) {
-      setError(err.message || 'Failed to add customer');
+      setError(err.message || 'An error occurred');
+      console.error('Error adding customer:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (loadingUser) {
+  // Function to refresh data
+  const handleRefreshAll = async () => {
+    await refreshProfile();
+    refreshSkills();
+    refreshCustomers();
+    refreshTimeline();
+  };
+
+  // Add delete skill function
+  const handleDeleteSkill = async (skillId: number) => {
+    try {
+      setIsSubmitting(true);
+      const { error } = await supabase
+        .from('user_skills')
+        .delete()
+        .eq('id', skillId);
+      
+      if (error) throw error;
+      
+      refreshSkills();
+      success('Skill removed successfully');
+    } catch (err: any) {
+      showError(err.message || 'Failed to remove skill');
+      console.error('Error removing skill:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Add delete customer function
+  const handleDeleteCustomer = async (customerAssignmentId: number) => {
+    try {
+      setIsSubmitting(true);
+      const { error } = await supabase
+        .from('user_customers')
+        .delete()
+        .eq('id', customerAssignmentId);
+      
+      if (error) throw error;
+      
+      refreshCustomers();
+      success('Customer assignment removed successfully');
+    } catch (err: any) {
+      showError(err.message || 'Failed to remove customer assignment');
+      console.error('Error removing customer assignment:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loadingProfile) {
     return <div>Loading...</div>;
   }
 
-  const profile = users[0];
-  if (!profile) {
-    return <div>User not found</div>;
-  }
-  
-  // Define the tab contents
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'info':
-        return (
-          <>
-            <div className="flex items-start gap-4">
-              <Avatar size="lg" rounded />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                  <Mail className="w-4 h-4" />
-                  <span>{profile.email}</span>
+  // Ensure we have a valid profile with fallbacks for all properties
+  const profile: Profile = profiles?.[0] || {
+    id: id || '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    title: null,
+    bio: null,
+    avatar_url: null,
+    created_at: new Date().toISOString()
+  };
+
+  // Create safe arrays for data
+  const safeSkills = skills || [];
+  const safeCustomers = customers || [];
+
+  // Update the title to use formatFullName
+  const formatFullName = (first_name: string, last_name: string, email: string) => {
+    return `${first_name} ${last_name} (${email})`;
+  };
+
+  return (
+    <EntityDetail
+      entityType="profiles"
+      entityId={id || ''}
+      title={formatFullName(profile.first_name, profile.last_name, profile.email)}
+      subtitle={profile.title || ''}
+      icon={Users}
+      description={profile.bio || ''}
+      imageUrl={profile.avatar_url || profileImageUrl || ''}
+      onImageUpload={handleImageUpload}
+      hideOldTimeline={true}
+      form={
+        <UserForm
+          user={profile}
+          isOpen={false}
+          onClose={() => {}}
+          onSubmit={async (data) => {
+            await update({ id: id || '', data });
+            await handleRefreshAll();
+          }}
+        />
+      }
+      mainContent={
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* User Info */}
+            <DetailCard 
+              title="Profile Details" 
+              entityType="user"
+              icon={Users}
+            >
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                  <Mail className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium">Email:</span>
+                <span>{profile.email}</span>
                 </div>
+                
                 {profile.title && (
-                  <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mt-1">
-                    <Briefcase className="w-4 h-4" />
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                    <Briefcase className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-medium">Title:</span>
                     <span>{profile.title}</span>
                   </div>
                 )}
+                
+                {profile.bio && (
+                  <div className="mt-4">
+                    <h3 className="text-md font-medium mb-2 text-gray-700 dark:text-gray-200">Bio</h3>
+                    <p className="text-gray-600 dark:text-gray-300">{profile.bio}</p>
+                  </div>
+                )}
               </div>
-            </div>
-            {profile.bio && (
-              <div className="mt-4">
-                <h2 className="text-lg font-semibold mb-2">Bio</h2>
-                <p className="text-gray-600 dark:text-gray-300">{profile.bio}</p>
-              </div>
-            )}
-          </>
-        );
-      
-      case 'skills':
-        return (
-          <div className="space-y-6">
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-lg font-semibold flex items-center">
-                  <GraduationCap className="h-5 w-5 mr-2" />
-                  Skills
-                </h2>
-                <button 
-                  onClick={() => setIsAddingSkill(!isAddingSkill)} 
-                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  {isAddingSkill ? 'Cancel' : 'Add Skill'}
-                </button>
-              </div>
-              
+            </DetailCard>
+
+            {/* User Skills Section */}
+            <DetailCard 
+              title="Skills" 
+              entityType="skill"
+              icon={GraduationCap}
+              actions={[
+                { 
+                  label: isAddingSkill ? 'Cancel' : 'Add Skill', 
+                  icon: isAddingSkill ? undefined : GraduationCap,
+                  onClick: () => setIsAddingSkill(!isAddingSkill),
+                  variant: 'primary'
+                }
+              ]}
+              isLoading={loadingSkills}
+              emptyState={
+                safeSkills.length === 0 && !isAddingSkill ? {
+                  message: "No skills added yet.",
+                  action: {
+                    label: "Add Skill",
+                    icon: GraduationCap,
+                    onClick: () => setIsAddingSkill(true)
+                  }
+                } : undefined
+              }
+            >
               {/* Add skill form */}
               {isAddingSkill && (
-                <div className="mb-4 p-4 border rounded-md bg-gray-50">
-                  <h3 className="text-md font-medium mb-3">Add Skill</h3>
-                  {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
-                  <form onSubmit={handleAddSkill} className="space-y-4">
+                <form onSubmit={handleAddSkill} className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+                  <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium mb-1">Skill</label>
-                      <select 
-                        value={selectedSkill} 
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Skill
+                      </label>
+                      <select
+                        value={selectedSkill}
                         onChange={(e) => setSelectedSkill(e.target.value)}
-                        className="w-full p-2 border rounded-md"
-                        disabled={isSubmitting}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                        required
                       >
                         <option value="">Select a skill</option>
-                        {Array.isArray(availableSkills) && availableSkills.map((skill: any) => (
-                          <option key={skill.id} value={skill.id}>
-                            {skill.name}
-                          </option>
+                        {availableSkills.map((skill) => (
+                          <option key={skill.id} value={skill.id}>{skill.name}</option>
                         ))}
                       </select>
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-medium mb-1">Proficiency Level</label>
-                      <select 
-                        value={proficiencyLevel} 
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Proficiency Level
+                      </label>
+                      <select
+                        value={proficiencyLevel}
                         onChange={(e) => setProficiencyLevel(e.target.value)}
-                        className="w-full p-2 border rounded-md"
-                        disabled={isSubmitting}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
                       >
                         <option value="Novice">Novice</option>
                         <option value="Intermediate">Intermediate</option>
@@ -529,307 +462,232 @@ export function UserDetail() {
                       </select>
                     </div>
                     
-                    <div className="flex justify-end space-x-2">
-                      <button 
-                        type="button" 
+                    {error && (
+                      <div className="text-red-600 text-sm">{error}</div>
+                    )}
+                    
+                    <div className="flex justify-end gap-2">
+                      <Button
                         onClick={() => setIsAddingSkill(false)}
-                        className="px-3 py-1 border rounded-md"
-                        disabled={isSubmitting}
+                        color="light"
+                        size="xs"
                       >
                         Cancel
-                      </button>
-                      <button 
+                      </Button>
+                      <Button
                         type="submit"
-                        className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        color="purple"
+                        size="xs"
                         disabled={isSubmitting}
                       >
                         {isSubmitting ? 'Adding...' : 'Add Skill'}
-                      </button>
+                      </Button>
                     </div>
-                  </form>
-                </div>
+                  </div>
+                </form>
               )}
               
-              {loadingSkills ? (
-                <div>Loading skills...</div>
-              ) : skills.length === 0 ? (
-                <div className="text-gray-500">No skills found</div>
-              ) : (
-                <div className="grid gap-2">
-                  {skills.map((us: UserSkill) => (
-                    <div key={us.id} className="p-3 border rounded-md flex justify-between items-center">
-                      <div>
-                        <div className="font-medium">{us.skill.name}</div>
-                        <div className="text-sm text-gray-500">Proficiency: {us.proficiency_level}</div>
-                      </div>
-                    </div>
+              {/* Skills List */}
+              {!isAddingSkill && safeSkills.length > 0 && (
+                <div className="space-y-2">
+                  {safeSkills.map((userSkill) => (
+                    <EntityDetailItem
+                      key={userSkill.id}
+                      id={userSkill.skill.id}
+                      name={userSkill.skill.name}
+                      type="skill"
+                      status={{
+                        value: userSkill.proficiency_level,
+                        color: 'purple'
+                      }}
+                      actions={
+                        <Button
+                          color="light"
+                          size="xs"
+                          onClick={() => handleDeleteSkill(userSkill.id)}
+                        >
+                          Remove
+                        </Button>
+                      }
+                    />
                   ))}
                 </div>
               )}
-            </div>
-            
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-lg font-semibold mb-3 flex items-center">
-                  <GraduationCap className="h-5 w-5 mr-2" />
-                  Applied Skills at Customers
-                </h2>
-                <ApplySkillButton 
-                  userId={id} 
-                  buttonText="Apply Skill" 
-                  onSuccess={refreshSkillApplications}
-                />
-              </div>
-              <UserSkillApplicationsList 
-                userId={id} 
-                refreshTrigger={skillApplicationRefreshCount}
-                onRefresh={refreshSkillApplications}
-              />
-            </div>
-          </div>
-        );
-      
-      case 'customers':
-        return (
-          <div>
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold flex items-center">
-                <Building className="h-5 w-5 mr-2" />
-                Customer Affiliations
-              </h2>
-              <button 
-                onClick={() => setIsAddingCustomer(!isAddingCustomer)} 
-                className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                {isAddingCustomer ? 'Cancel' : 'Add Customer'}
-              </button>
-            </div>
-            
-            {/* Add customer form */}
-            {isAddingCustomer && (
-              <div className="mb-4 p-4 border rounded-md bg-gray-50">
-                <h3 className="text-md font-medium mb-3">Add Customer Assignment</h3>
-                {error && <div className="text-red-500 text-sm mb-3">{error}</div>}
-                <form onSubmit={handleAddCustomer} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Customer</label>
-                    <select 
-                      value={selectedCustomer} 
-                      onChange={(e) => setSelectedCustomer(e.target.value)}
-                      className="w-full p-2 border rounded-md"
-                      disabled={isSubmitting}
-                    >
-                      <option value="">Select a customer</option>
-                      {Array.isArray(availableCustomers) && availableCustomers.map((customer: any) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Role (optional)</label>
-                    <select 
-                      value={selectedRole} 
-                      onChange={(e) => setSelectedRole(e.target.value)}
-                      className="w-full p-2 border rounded-md"
-                      disabled={isSubmitting}
-                    >
-                      <option value="">No specific role</option>
-                      {Array.isArray(availableRoles) && availableRoles.map((role: any) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Start Date</label>
-                    <input 
-                      type="date" 
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full p-2 border rounded-md"
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                  
-                  <div className="flex justify-end space-x-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setIsAddingCustomer(false)}
-                      className="px-3 py-1 border rounded-md"
-                      disabled={isSubmitting}
-                    >
-                      Cancel
-                    </button>
-                    <button 
-                      type="submit"
-                      className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? 'Adding...' : 'Add Customer'}
-                    </button>
+            </DetailCard>
+          
+            {/* User's Customers Section */}
+            <DetailCard 
+              title="Customers" 
+              entityType="customer"
+              icon={Building}
+              actions={[
+                { 
+                  label: isAddingCustomer ? 'Cancel' : 'Add Customer', 
+                  icon: isAddingCustomer ? undefined : Building,
+                  onClick: () => setIsAddingCustomer(!isAddingCustomer),
+                  variant: 'primary'
+                }
+              ]}
+              isLoading={loadingCustomers}
+              emptyState={
+                safeCustomers.length === 0 && !isAddingCustomer ? {
+                  message: "No customer assignments yet.",
+                  action: {
+                    label: "Add Customer",
+                    icon: Building,
+                    onClick: () => setIsAddingCustomer(true)
+                  }
+                } : undefined
+              }
+            >
+              {/* Add customer form */}
+              {isAddingCustomer && (
+                <form onSubmit={handleAddCustomer} className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Customer
+                      </label>
+                      <select
+                        value={selectedCustomer}
+                        onChange={(e) => setSelectedCustomer(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                        required
+                      >
+                        <option value="">Select a customer</option>
+                        {availableCustomers.map((customer) => (
+                          <option key={customer.id} value={customer.id}>{customer.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Role (Optional)
+                      </label>
+                      <select
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                      >
+                        <option value="">No specific role</option>
+                        {availableRoles.map((role) => (
+                          <option key={role.id} value={role.id}>{role.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                      />
+                    </div>
+                    
+                    {error && (
+                      <div className="text-red-600 text-sm">{error}</div>
+                    )}
+                    
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        onClick={() => setIsAddingCustomer(false)}
+                        color="light"
+                        size="xs"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        color="green"
+                        size="xs"
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? 'Adding...' : 'Add Customer'}
+                      </Button>
+                    </div>
                   </div>
                 </form>
-              </div>
-            )}
-            
-            {loadingCustomers ? (
-              <div>Loading customers...</div>
-            ) : customers.length === 0 ? (
-              <div className="text-gray-500">No customers found</div>
-            ) : (
-              <div className="grid gap-2">
-                {customers.map((uc: UserCustomer) => (
-                  <div key={uc.id} className="p-3 border rounded-md flex justify-between items-center">
-                    <div>
-                      <div className="font-medium">{uc.customer.name}</div>
-                      <div className="text-sm text-gray-500">
-                        Since {new Date(uc.start_date).toLocaleDateString()}
-                        {uc.role_id && ` • Role ID: ${uc.role_id}`}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      
-      case 'activity':
-        return (
-          <div>
-            <h2 className="text-lg font-semibold mb-3 flex items-center">
-              <Clock className="h-5 w-5 mr-2" />
-              Recent Activity
-            </h2>
-            {timelineLoading ? (
-              <div>Loading activity...</div>
-            ) : timeline.length === 0 ? (
-              <div className="text-gray-500">No activity found</div>
-            ) : (
-              <div className="grid gap-2">
-                {timeline.map((item: any) => (
-                  <div key={item.id} className="p-3 border rounded-md">
-                    <div className="font-medium">{item.event_type} {item.entity_type}</div>
-                    <div className="text-sm">{item.description}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {new Date(item.event_time).toLocaleString()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      
-      default:
-        return <div>Select a tab</div>;
-    }
-  };
-
-  return (
-    <EntityDetail
-      entityType="profiles"
-      entityId={id}
-      title={profile.full_name || profile.email}
-      icon={Users}
-      form={
-        <UserForm
-          user={profile}
-          isOpen={false}
-          onClose={() => {}}
-          onSubmit={async (data) => {
-            await update({ id: id, data });
-            await refreshUser();
-          }}
-        />
-      }
-      mainContent={
-        <>
-          {/* Tabs Navigation */}
-          <div className="border-b mb-6">
-            <div className="flex space-x-8">
-              <button
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'info'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => setActiveTab('info')}
+              )}
+              
+              {/* Customers List */}
+              {!isAddingCustomer && safeCustomers.length > 0 && (
+                <div className="space-y-2">
+                  {safeCustomers.map((userCustomer) => (
+                    <EntityDetailItem
+                      key={userCustomer.id}
+                      id={userCustomer.customer.id}
+                      name={userCustomer.customer.name}
+                      type="customer"
+                      date={{
+                        label: "Since",
+                        value: userCustomer.start_date
+                      }}
+                      tertiaryField={
+                        userCustomer.role_id ? {
+                          label: "Role",
+                          value: `Role ID: ${userCustomer.role_id}`,
+                          icon: Briefcase
+                        } : undefined
+                      }
+                      actions={
+                        <Button
+                          color="light"
+                          size="xs"
+                          onClick={() => handleDeleteCustomer(userCustomer.id)}
+                        >
+                          Remove
+                        </Button>
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </DetailCard>
+           
+            {/* Applied Skills */}
+            <div className="lg:col-span-2">
+              <DetailCard
+                title="Applied Skills"
+                entityType="application"
+                icon={Star}
               >
-                Info
-              </button>
-              <button
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'skills'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => setActiveTab('skills')}
-              >
-                Skills
-              </button>
-              <button
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'customers'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => setActiveTab('customers')}
-              >
-                Customers
-              </button>
-              <button
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'activity'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => setActiveTab('activity')}
-              >
-                Activity
-              </button>
+                <UserAppliedSkills userId={id || ''} />
+              </DetailCard>
             </div>
           </div>
           
-          {/* Tab Content */}
-          <div className="mt-6">
-            {renderTabContent()}
-          </div>
+          {/* Timeline Section */}
+          <div className="mt-8">
+            <DetailCard
+              title="Activity Timeline"
+              entityType="application"
+              icon={Clock}
+            >
+              <UnifiedTimeline
+                title="Activity Timeline"
+                events={timelineEvents}
+                loading={timelineLoading}
+                error={timelineError}
+                showHeader={false}
+                entityType="profiles"
+                entityId={id}
+                onRefresh={refreshTimeline}
+                emptyMessage="No activity recorded yet."
+              />
+            </DetailCard>
+            </div>
         </>
       }
-      relatedEntities={[
-        {
-          title: 'Customer Affiliations',
-          icon: Building,
-          entities: customers.map((uc: UserCustomer) => ({
-            id: uc.customer.id,
-            name: uc.customer.name,
-            subtitle: uc.role_id ? `Role ID: ${uc.role_id}` : undefined,
-            link: `/customers/${uc.customer.id}`
-          })),
-          loading: loadingCustomers
-        },
-        {
-          title: 'Skills',
-          icon: GraduationCap,
-          entities: skills.map((us: UserSkill) => ({
-            id: us.skill.id,
-            name: us.skill.name,
-            subtitle: `Proficiency: ${us.proficiency_level}`,
-            link: `/skills/${us.skill.id}`
-          })),
-          loading: loadingSkills
-        }
-      ]}
-      onRefresh={refreshUser}
+      relatedEntities={[]}
+      onRefresh={handleRefreshAll}
       deleteInfo={{
-        entityName: profile.full_name || profile.email,
-        relatedDataDescription: "customer assignments, skills, and skill applications"
+        entityName: formatFullName(profile.first_name, profile.last_name, profile.email),
+        relatedDataDescription: "skills, customer assignments, and activity history"
       }}
     />
   );
