@@ -74,7 +74,24 @@ export function getInitials(name: string) {
 }
 
 // Name formatting utilities
-export function formatFullName(firstName: string | null | undefined, lastName: string | null | undefined, email: string | null | undefined): string {
+// Function overloads
+export function formatFullName(profile: { first_name?: string | null; last_name?: string | null; email?: string | null }): string;
+export function formatFullName(firstName: string | null | undefined, lastName: string | null | undefined, email: string | null | undefined): string;
+// Implementation
+export function formatFullName(
+  firstOrProfile: string | null | undefined | { first_name?: string | null; last_name?: string | null; email?: string | null },
+  lastName?: string | null | undefined,
+  email?: string | null | undefined
+): string {
+  // Check if first parameter is a profile object
+  if (firstOrProfile && typeof firstOrProfile === 'object') {
+    const profile = firstOrProfile;
+    return formatFullName(profile.first_name, profile.last_name, profile.email);
+  }
+  
+  // Handle the case when parameters are individual name parts
+  const firstName = firstOrProfile as string | null | undefined;
+  
   // Create full name from first and last name parts
   const nameArray: string[] = [];
   if (firstName) nameArray.push(firstName);

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Card, TextInput, Button, Alert } from 'flowbite-react';
+import { Card, TextInput, Button, Alert, Label } from 'flowbite-react';
 import { supabase } from '../lib/supabase';
-import { Mail, Lock } from 'lucide-react';
+import { Mail, Lock, User } from 'lucide-react';
 
 export function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -15,8 +17,8 @@ export function Auth() {
       const profileData = {
         id: userId,
         email,
-        first_name: metadata?.first_name || email.split('@')[0], // Use email username as initial first name if not provided
-        last_name: metadata?.last_name || '' // Empty last name if not provided
+        first_name: metadata?.first_name || firstName || email.split('@')[0], 
+        last_name: metadata?.last_name || lastName || ''
       };
       
       const { error } = await supabase
@@ -68,8 +70,8 @@ export function Auth() {
           options: {
             emailRedirectTo: window.location.origin,
             data: {
-              first_name: email.split('@')[0], // Use email username as initial first name
-              last_name: ''
+              first_name: firstName || email.split('@')[0],
+              last_name: lastName || ''
             }
           }
         });
@@ -77,7 +79,10 @@ export function Auth() {
         
         // Create profile and audit log for new signup
         if (data.user) {
-          await createProfile(data.user.id, email, data.user.user_metadata);
+          await createProfile(data.user.id, email, {
+            first_name: firstName || undefined,
+            last_name: lastName || undefined
+          });
           await createSignupAuditLog(data.user.id, email);
         }
         
@@ -126,6 +131,35 @@ export function Auth() {
               required
             />
           </div>
+          
+          {mode === 'signup' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="first_name" className="mb-1 block">First Name</Label>
+                  <TextInput
+                    id="first_name"
+                    icon={User}
+                    placeholder="First Name"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last_name" className="mb-1 block">Last Name</Label>
+                  <TextInput
+                    id="last_name"
+                    placeholder="Last Name"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          
           <div>
             <TextInput
               icon={Lock}

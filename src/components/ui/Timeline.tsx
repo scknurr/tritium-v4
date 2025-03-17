@@ -4,10 +4,11 @@ import { Link } from 'react-router-dom';
 import { useQueryWithCache } from '../../lib/hooks/useQueryWithCache';
 import { useRealtimeSubscription } from '../../hooks/useRealtimeSubscription';
 import { queryKeys } from '../../lib/queryKeys';
-import { formatDateTime } from '../../lib/utils';
+import { formatDateTime, formatFullName, getInitials } from '../../lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createLogger } from '../../lib/debug';
+import { Avatar, AvatarImage, AvatarFallback } from '../ui';
 
 /**
  * TIMELINE COMPONENT DOCUMENTATION
@@ -377,7 +378,7 @@ export function Timeline({
     table: 'audit_logs',
     filter: entityType && entityId ? {
       entity_type: entityType,
-      entity_id: entityId
+      entity_id: String(entityId)  // Convert to string to ensure it matches the expected type
     } : undefined,
     onUpdate: async () => {
       const { data } = await refetchAuditLogs(); // Refetch audit logs on update
